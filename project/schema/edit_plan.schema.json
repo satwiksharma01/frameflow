@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/edit_plan.schema.json",
+  "title": "FrameflowEditPlan",
+  "description": "Claude's keep/remove decisions over a transcript. `reason` is required on every decision: the whitepaper's first-cut philosophy requires uncertain creative choices to stay visible to the creator, which is impossible if cuts arrive unexplained.",
+  "type": "object",
+  "required": ["source_duration_seconds", "decisions"],
+  "additionalProperties": false,
+  "properties": {
+    "source_duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "reasoning": {
+      "type": "string",
+      "description": "Optional human-readable summary of the overall approach."
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action", "start", "end", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "action": { "type": "string", "enum": ["keep", "remove"] },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

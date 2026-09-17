@@ -6,3 +6,6 @@ env/
 
 # Generated knowledge-graph cache, not source
 graphify-out/
+
+# Normalized working media - regenerable from the original source
+media/

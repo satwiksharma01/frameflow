@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/transcript.schema.json",
+  "title": "FrameflowTranscript",
+  "description": "Deliberately lenient (additionalProperties allowed): transcripts are ingested from third-party ASR output, and real Whisper JSON carries extra fields (language, tokens, per-segment ids) that must not be rejected. Documents we author ourselves - IR and edit plan - are strict instead.",
+  "type": "object",
+  "required": ["source", "duration_seconds", "segments"],
+  "properties": {
+    "source": { "type": "string", "minLength": 1 },
+    "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "note": { "type": "string" },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "text"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 },
+          "text": { "type": "string" }
+        }
+      }
+    }
+  }
+}
