@@ -45,6 +45,7 @@ VALID_EDIT_PLAN = {
     "decisions": [
         {"action": "keep", "start": 0.0, "end": 4.5, "reason": "hook"},
         {"action": "remove", "start": 4.5, "end": 7.0, "reason": "dead air"},
+        {"action": "keep", "start": 7.0, "end": 25.7, "reason": "main content"},
     ],
 }
 

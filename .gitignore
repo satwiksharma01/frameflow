@@ -9,3 +9,10 @@ graphify-out/
 
 # Normalized working media - regenerable from the original source
 media/
+
+# Downloaded ASR models (hundreds of MB) and per-video pipeline output
+models/
+output/
+
+# Local credentials - each user brings their own provider key
+.env
