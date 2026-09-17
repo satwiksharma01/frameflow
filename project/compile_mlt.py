@@ -121,6 +121,12 @@ def build_mlt(ir: dict) -> ET.Element:
         out_f = in_f + length_f - 1
         if length_f <= 0:
             raise ValueError(f"clip {clip['id']!r} rounds to zero frames at {fps} fps")
+        if out_f == source_frames:
+            # Rounding in and length separately can land one frame past the
+            # end for a clip that runs to the end of the source - which most
+            # first cuts do. One frame is rounding, not an authoring error.
+            out_f -= 1
+            length_f -= 1
         if out_f > source_frames - 1:
             raise ValueError(
                 f"clip {clip['id']!r} ends at source frame {out_f}, beyond the source's "

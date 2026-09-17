@@ -9,6 +9,19 @@
     "source": { "type": "string", "minLength": 1 },
     "duration_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "note": { "type": "string" },
+    "language": { "type": "string" },
+    "silences": {
+      "description": "Measured from the audio, not inferred from Whisper: Whisper's segment boundaries absorb surrounding pauses, so these are what cut points should be placed against.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
     "segments": {
       "type": "array",
       "items": {

@@ -82,11 +82,62 @@ def _check_ir_semantics(ir: dict) -> None:
         raise ValidationError("ir failed semantic validation:\n" + "\n".join(f"  {p}" for p in problems))
 
 
+# Edit plans come from a model reasoning over transcript timestamps, so allow
+# small arithmetic slack at boundaries - but not enough to hide a skipped span.
+_PLAN_BOUNDARY_TOLERANCE = 0.05
+
+
+def _check_edit_plan_semantics(plan: dict) -> None:
+    """Decisions must cover the whole source, in order, with no gaps or overlaps.
+
+    Requiring full coverage means every second is explicitly kept or removed,
+    so nothing can be dropped silently - an omitted span is an error, not an
+    implicit cut.
+    """
+    problems = []
+    decisions = plan["decisions"]
+    duration = plan["source_duration_seconds"]
+
+    for i, d in enumerate(decisions):
+        if d["end"] <= d["start"]:
+            problems.append(f"decision {i}: end ({d['end']}) must be greater than start ({d['start']})")
+
+    if decisions[0]["start"] > _PLAN_BOUNDARY_TOLERANCE:
+        problems.append(f"decisions start at {decisions[0]['start']}s; the first must start at 0")
+
+    for i, (earlier, later) in enumerate(zip(decisions, decisions[1:]), start=1):
+        gap = later["start"] - earlier["end"]
+        if gap > _PLAN_BOUNDARY_TOLERANCE:
+            problems.append(
+                f"decision {i}: gap from {earlier['end']}s to {later['start']}s is not covered; "
+                f"every span must be explicitly kept or removed"
+            )
+        elif gap < -_PLAN_BOUNDARY_TOLERANCE:
+            problems.append(
+                f"decision {i}: starts at {later['start']}s, overlapping the previous decision "
+                f"which ends at {earlier['end']}s; decisions must be in order and not overlap"
+            )
+
+    if abs(decisions[-1]["end"] - duration) > _PLAN_BOUNDARY_TOLERANCE:
+        problems.append(
+            f"decisions end at {decisions[-1]['end']}s but the source is {duration}s long; "
+            f"the last decision must end at the source duration"
+        )
+
+    if not any(d["action"] == "keep" for d in decisions):
+        problems.append("no decision keeps anything; a first cut needs at least one kept span")
+
+    if problems:
+        raise ValidationError("edit_plan failed semantic validation:\n" + "\n".join(f"  {p}" for p in problems))
+
+
 def validate(document: dict, kind: str) -> None:
     """Raise ValidationError if the document is invalid."""
     _check_schema(document, kind)
     if kind == "ir":
         _check_ir_semantics(document)
+    elif kind == "edit_plan":
+        _check_edit_plan_semantics(document)
 
 
 def validate_file(path: Path | str, kind: str) -> dict:
