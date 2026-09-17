@@ -1,0 +1,12 @@
+{
+  "source": "C:/media/meet-recording.mp4",
+  "duration_seconds": 25.7099,
+  "note": "STUB transcript for Phase 0 pipeline validation only. This is placeholder text, NOT a real transcription of this recording's audio. Real transcription (Whisper) is a separately-scoped, already-solved integration; Phase 0 is validating the MLT/Shotcut round-trip, not transcript accuracy.",
+  "segments": [
+    {"start": 0.0, "end": 4.5, "text": "[stub] intro / hook segment"},
+    {"start": 4.5, "end": 7.0, "text": "[stub] dead air / filler - candidate for removal"},
+    {"start": 7.0, "end": 18.0, "text": "[stub] main content segment"},
+    {"start": 18.0, "end": 20.5, "text": "[stub] false start / repeated phrase - candidate for removal"},
+    {"start": 20.5, "end": 25.7099, "text": "[stub] closing segment"}
+  ]
+}

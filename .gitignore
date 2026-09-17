@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+
+# Generated knowledge-graph cache, not source
+graphify-out/

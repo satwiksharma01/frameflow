@@ -1,0 +1,19 @@
+{
+  "project": {
+    "name": "phase0-real-clip",
+    "width": 1920,
+    "height": 1080,
+    "fps": 27.636907940641066
+  },
+  "tracks": [
+    {
+      "id": "video-main",
+      "type": "video",
+      "clips": [
+        {"id": "clip1", "source": "C:/media/meet-recording.mp4", "in": 0.0, "out": 4.5},
+        {"id": "clip2", "source": "C:/media/meet-recording.mp4", "in": 7.0, "out": 18.0},
+        {"id": "clip3", "source": "C:/media/meet-recording.mp4", "in": 20.5, "out": 25.70}
+      ]
+    }
+  ]
+}

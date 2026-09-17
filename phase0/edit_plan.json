@@ -1,0 +1,11 @@
+{
+  "source_duration_seconds": 25.7099,
+  "reasoning": "Mirrors whitepaper section 7 (Editing): dead-air removal and false-start removal, based on the stub transcript's segment labels. Keeps intro, main content and closing; drops the two segments flagged as filler.",
+  "decisions": [
+    {"action": "keep", "start": 0.0, "end": 4.5, "reason": "hook/intro"},
+    {"action": "remove", "start": 4.5, "end": 7.0, "reason": "dead air"},
+    {"action": "keep", "start": 7.0, "end": 18.0, "reason": "main content"},
+    {"action": "remove", "start": 18.0, "end": 20.5, "reason": "false start / repeated phrase"},
+    {"action": "keep", "start": 20.5, "end": 25.70, "reason": "closing"}
+  ]
+}
