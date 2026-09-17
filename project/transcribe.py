@@ -67,10 +67,16 @@ def find_model(model: Path | str | None = None) -> Path:
     return path
 
 
-def extract_audio(video: Path | str, wav: Path | str) -> None:
-    """16 kHz mono PCM - the input format whisper.cpp expects."""
+def extract_audio(video: Path | str, wav: Path | str, duration: float) -> None:
+    """16 kHz mono PCM - the input format whisper.cpp expects.
+
+    Cut to the video's duration: some recorders (Windows Camera, observed) write
+    an audio track that runs well past the last video frame. Audio beyond the
+    picture can't be part of the edit, and transcribing it produces timestamps
+    past the end of the timeline.
+    """
     result = subprocess.run(
-        [_find_tool("ffmpeg"), "-y", "-v", "error", "-i", str(video),
+        [_find_tool("ffmpeg"), "-y", "-v", "error", "-i", str(video), "-t", f"{duration:.3f}",
          "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)],
         capture_output=True, text=True, timeout=1800,
     )
@@ -109,7 +115,9 @@ def whisper_json_to_segments(whisper: dict) -> list[dict]:
     segments = []
     for item in whisper.get("transcription", []):
         text = item.get("text", "").strip()
-        if not text:
+        # Whisper emits bare punctuation ("...", ".") over stretches with no
+        # words in them; that is not speech.
+        if not any(ch.isalnum() for ch in text):
             continue
         offsets = item["offsets"]
         segments.append({
@@ -140,7 +148,7 @@ def transcribe(video: Path | str, model: Path | str | None = None, language: str
 
     with tempfile.TemporaryDirectory() as tmp:
         wav = Path(tmp) / "audio.wav"
-        extract_audio(video, wav)
+        extract_audio(video, wav, duration)
         whisper = run_whisper(wav, model_path, language, Path(tmp) / "whisper")
         silences = detect_silences(wav, duration)
 

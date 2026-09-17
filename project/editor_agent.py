@@ -22,6 +22,21 @@ TOOL_NAME = "submit_edit_plan"
 # frames at compile time. Catch it here, where the model can still fix it.
 MIN_KEEP_SECONDS = 0.1
 
+# Below this much audible audio there is nothing to edit, and Whisper fills
+# silence with stock phrases ("Thank you.") that would otherwise be sent to a
+# paid model as if they were speech.
+MIN_AUDIBLE_SECONDS = 3.0
+
+
+class NoSpeechError(Exception):
+    pass
+
+
+def audible_seconds(transcript: dict) -> float:
+    silent = sum(min(s["end"], transcript["duration_seconds"]) - s["start"]
+                 for s in transcript.get("silences") or [])
+    return max(0.0, transcript["duration_seconds"] - silent)
+
 SYSTEM_PROMPT = """You are the editor for Frameflow, making the first cut of a creator's raw recording. For one source video you receive a timestamped transcript and the silences measured from its audio, and you decide which spans to keep and which to remove.
 
 Cut what a skilled human editor would cut from a talking-head or screen recording: dead air and long pauses, false starts, abandoned or repeated takes of the same line (keep the best take, usually the last complete one), and filler. Keep the substance, and keep the pacing natural: shorten long pauses rather than removing every breath, leaving roughly a quarter of a second of silence around speech. Short pauses inside a sentence belong to the speech; leave them.
@@ -87,8 +102,13 @@ def check_plan(plan: dict, transcript: dict) -> list[str]:
 def propose_edit_plan(transcript: dict, provider: Provider, brief: str | None = None,
                       max_attempts: int = 4) -> dict:
     validate(transcript, "transcript")
-    if not transcript["segments"]:
-        raise ValueError("transcript has no speech segments; there is nothing to edit")
+    audible = audible_seconds(transcript)
+    if not transcript["segments"] or audible < MIN_AUDIBLE_SECONDS:
+        raise NoSpeechError(
+            f"no usable speech: {audible:.1f}s of the {transcript['duration_seconds']}s recording is "
+            f"above the silence threshold and {len(transcript['segments'])} speech segment(s) were "
+            f"found. Check the recording's microphone input before editing."
+        )
     return provider.submit(
         system=SYSTEM_PROMPT,
         user=build_user_prompt(transcript, brief),

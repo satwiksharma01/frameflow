@@ -12,7 +12,16 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from project.editor_agent import TOOL_NAME, build_tool, build_user_prompt, check_plan
+from project.editor_agent import (
+    TOOL_NAME,
+    NoSpeechError,
+    audible_seconds,
+    build_tool,
+    build_user_prompt,
+    check_plan,
+    propose_edit_plan,
+)
+from project.media import choose_cfr_rate
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
 from project.providers.anthropic_provider import AnthropicProvider, _echoable
@@ -41,6 +50,21 @@ GOOD_PLAN = {
 }
 
 
+class TestChooseCfrRate(unittest.TestCase):
+    def test_jitter_just_above_a_standard_rate_stays_at_that_rate(self):
+        # Measured on real Windows Camera recordings declared as 60 fps.
+        for measured in (30.0154, 30.3106, 30.2995):
+            self.assertEqual(choose_cfr_rate(measured), 30)
+
+    def test_genuinely_between_rates_rounds_up_so_no_frames_are_dropped(self):
+        self.assertEqual(choose_cfr_rate(27.64), 30)  # Game DVR screen capture
+        self.assertEqual(choose_cfr_rate(24.8), 25)
+        self.assertEqual(choose_cfr_rate(33.0), 50)
+
+    def test_above_the_highest_rate_caps_at_60(self):
+        self.assertEqual(choose_cfr_rate(90.0), 60)
+
+
 class TestTranscriptionParsing(unittest.TestCase):
     def test_whisper_offsets_become_seconds_and_empty_text_is_dropped(self):
         whisper = {"transcription": [
@@ -50,6 +74,13 @@ class TestTranscriptionParsing(unittest.TestCase):
         self.assertEqual(whisper_json_to_segments(whisper), [
             {"start": 0.0, "end": 2.66, "text": "Hi everyone."},
         ])
+
+    def test_punctuation_only_segments_are_not_speech(self):
+        whisper = {"transcription": [
+            {"offsets": {"from": 0, "to": 23400}, "text": " ..."},
+            {"offsets": {"from": 0, "to": 2000}, "text": " ."},
+        ]}
+        self.assertEqual(whisper_json_to_segments(whisper), [])
 
     def test_silencedetect_pairs_start_and_end(self):
         stderr = (
@@ -122,6 +153,36 @@ class TestEditPlanContract(unittest.TestCase):
         self.assertEqual(tool.name, TOOL_NAME)
         self.assertNotIn("$schema", tool.input_schema)
         self.assertIn("decisions", tool.input_schema["properties"])
+
+
+class _ProviderThatMustNotBeCalled:
+    name, model, served_by = "fake", "fake", None
+
+    def submit(self, *args, **kwargs):
+        raise AssertionError("the model was called for a recording with no speech")
+
+
+class TestNoSpeechGate(unittest.TestCase):
+    def test_silent_recording_stops_before_the_model_is_called(self):
+        # Shape of a real Windows Camera recording with a muted mic: Whisper
+        # hallucinated "Thank you." over audio measured as silent end to end.
+        silent = {
+            "source": "C:/media/silent.mp4",
+            "duration_seconds": 16.633,
+            "segments": [{"start": 0.0, "end": 16.4, "text": "Thank you."}],
+            "silences": [{"start": 0.0, "end": 16.43}],
+        }
+        with self.assertRaisesRegex(NoSpeechError, "microphone"):
+            propose_edit_plan(silent, _ProviderThatMustNotBeCalled())
+
+    def test_transcript_with_no_segments_stops(self):
+        empty = {**TRANSCRIPT, "segments": [], "silences": []}
+        with self.assertRaises(NoSpeechError):
+            propose_edit_plan(empty, _ProviderThatMustNotBeCalled())
+
+    def test_audible_seconds_ignores_silence_past_the_end(self):
+        t = {"duration_seconds": 10.0, "silences": [{"start": 8.0, "end": 12.0}]}
+        self.assertAlmostEqual(audible_seconds(t), 8.0)
 
 
 class TestPlanToIR(unittest.TestCase):
