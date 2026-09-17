@@ -143,7 +143,10 @@ def run_whisper(wav: Path | str, model: Path, language: str, out_base: Path) -> 
 
 def transcribe(video: Path | str, model: Path | str | None = None, language: str = "auto") -> dict:
     video = Path(video)
-    duration = analyze(video).duration_seconds
+    info = analyze(video)
+    if not info.has_audio:
+        raise TranscriptionError(f"{video.name} has no audio track, so there is no speech to transcribe")
+    duration = info.duration_seconds
     model_path = find_model(model)
 
     with tempfile.TemporaryDirectory() as tmp:

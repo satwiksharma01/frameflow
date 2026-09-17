@@ -48,6 +48,7 @@ class FrameRateInfo:
     width: int
     height: int
     duration_seconds: float
+    has_audio: bool
 
     @property
     def mode(self) -> str:
@@ -112,6 +113,7 @@ def analyze(video_path: Path | str) -> FrameRateInfo:
         width=int(video["width"]),
         height=int(video["height"]),
         duration_seconds=duration,
+        has_audio=any(s.get("codec_type") == "audio" for s in data["streams"]),
     )
 
 
@@ -156,6 +158,7 @@ def main() -> None:
     print(f"declared:    {info.nominal_fps:.4f} fps")
     print(f"measured:    {info.measured_fps:.4f} fps")
     print(f"frame rate:  {'VARIABLE' if info.is_vfr else 'constant'}")
+    print(f"audio track: {'yes' if info.has_audio else 'NONE'}")
 
     if not args.normalize:
         if info.is_vfr:
