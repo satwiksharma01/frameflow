@@ -41,10 +41,10 @@ from project.editor_agent import (
     propose_edit_plan,
 )
 from project.engine_check import check_with_melt
-from project.media import analyze, choose_cfr_rate, normalize_to_cfr
+from project.media import MediaError, analyze, choose_cfr_rate, normalize_to_cfr
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
-from project.transcribe import transcribe
+from project.transcribe import TranscriptionError, transcribe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -82,6 +82,13 @@ def prepare(video: Path, out_dir: Path, language: str) -> dict:
 
     _step(f"Checking frame rate of {video.name}")
     info = analyze(video)
+    if not info.has_audio:
+        # Checked before normalizing, which on a long file is minutes of work
+        # that would be thrown away.
+        raise NoSpeechError(
+            f"{video.name} has no audio track, so there is no speech to edit. Files saved from "
+            f"streaming sites are often video-only, with the audio served as a separate stream."
+        )
     source = video
     if info.is_vfr:
         fps = choose_cfr_rate(info.measured_fps)
@@ -205,7 +212,7 @@ def main() -> None:
         else:
             project = first_cut(video, out_dir, args.brief, args.provider, args.model,
                                 args.base_url, args.language)
-    except (NoSpeechError, ProviderError, PlanError) as e:
+    except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 
     print(f"\nFirst cut: {project}")
