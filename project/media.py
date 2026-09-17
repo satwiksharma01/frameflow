@@ -29,6 +29,12 @@ STANDARD_RATES = [24, 25, 30, 50, 60]
 # beyond which a file is treated as variable frame rate.
 VFR_TOLERANCE = 0.02
 
+# A measured average this close above a standard rate is that rate plus timing
+# jitter, not a faster capture. Windows Camera recordings measure 30.0-30.3 fps
+# for what is a 30 fps capture; without this they would round up to 50 fps and
+# duplicate ~40% of their frames.
+RATE_JITTER_TOLERANCE = 0.02
+
 
 class MediaError(Exception):
     pass
@@ -110,13 +116,14 @@ def analyze(video_path: Path | str) -> FrameRateInfo:
 
 
 def choose_cfr_rate(measured_fps: float) -> int:
-    """Smallest standard rate at or above the measured average.
+    """Smallest standard rate at or above the measured average, allowing for jitter.
 
     Rounding up rather than to the nearest rate avoids discarding real frames
-    during the transcode.
+    during the transcode - but an average only fractionally above a standard
+    rate is jitter, and rounding it up would duplicate frames instead.
     """
     for rate in STANDARD_RATES:
-        if measured_fps <= rate:
+        if measured_fps <= rate * (1 + RATE_JITTER_TOLERANCE):
             return rate
     return STANDARD_RATES[-1]
 

@@ -21,11 +21,11 @@ import sys
 from pathlib import Path
 
 from project.compile_mlt import compile_file
-from project.editor_agent import propose_edit_plan
+from project.editor_agent import NoSpeechError, propose_edit_plan
 from project.engine_check import check_with_melt
 from project.media import analyze, choose_cfr_rate, normalize_to_cfr
 from project.plan_to_ir import edit_plan_to_ir
-from project.providers import get_provider
+from project.providers import ProviderError, get_provider
 from project.transcribe import transcribe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -119,8 +119,11 @@ def main() -> None:
         sys.exit(f"no such file: {video}")
     out_dir = Path(args.out) if args.out else REPO_ROOT / "output" / video.stem
 
-    project = first_cut(video, out_dir, args.brief, args.provider, args.model,
-                        args.base_url, args.language)
+    try:
+        project = first_cut(video, out_dir, args.brief, args.provider, args.model,
+                            args.base_url, args.language)
+    except (NoSpeechError, ProviderError) as e:
+        sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
     print(f"\nFirst cut: {project}")
     if args.open:
         _open_in_shotcut(project)
