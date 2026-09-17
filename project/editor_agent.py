@@ -37,7 +37,10 @@ def audible_seconds(transcript: dict) -> float:
                  for s in transcript.get("silences") or [])
     return max(0.0, transcript["duration_seconds"] - silent)
 
-SYSTEM_PROMPT = """You are the editor for Frameflow, making the first cut of a creator's raw recording. For one source video you receive a timestamped transcript and the silences measured from its audio, and you decide which spans to keep and which to remove.
+# Shared by both ways of running the editor: a model called through an API
+# (tool mode), and a coding agent such as Claude Code reading a request file
+# (agent mode). Only the submission instructions differ.
+EDITOR_GUIDANCE = """You are the editor for Frameflow, making the first cut of a creator's raw recording. For one source video you receive a timestamped transcript and the silences measured from its audio, and you decide which spans to keep and which to remove.
 
 Cut what a skilled human editor would cut from a talking-head or screen recording: dead air and long pauses, false starts, abandoned or repeated takes of the same line (keep the best take, usually the last complete one), and filler. Keep the substance, and keep the pacing natural: shorten long pauses rather than removing every breath, leaving roughly a quarter of a second of silence around speech. Short pauses inside a sentence belong to the speech; leave them.
 
@@ -45,7 +48,11 @@ Place cut points using the measured silences, not the transcript's segment bound
 
 When you are unsure whether something should go, keep it and say so in the reason. The creator reviews every decision in the editor, so "kept: possibly a repeated take" is more useful than a confident wrong cut.
 
-Submit your plan by calling submit_edit_plan. The decisions must cover the whole source from 0 to its duration, in order, with no gaps or overlaps, so every second is explicitly kept or removed. If the tool reports errors, correct them and submit again."""
+The decisions must cover the whole source from 0 to its duration, in order, with no gaps or overlaps, so every second is explicitly kept or removed."""
+
+SYSTEM_PROMPT = EDITOR_GUIDANCE + """
+
+Submit your plan by calling submit_edit_plan. If the tool reports errors, correct them and submit again."""
 
 TOOL_DESCRIPTION = (
     "Submit the complete edit plan for this source video. Call it once every span from 0 "
@@ -99,8 +106,8 @@ def check_plan(plan: dict, transcript: dict) -> list[str]:
     return problems
 
 
-def propose_edit_plan(transcript: dict, provider: Provider, brief: str | None = None,
-                      max_attempts: int = 4) -> dict:
+def ensure_speech(transcript: dict) -> None:
+    """Raise NoSpeechError rather than send silence to an editor."""
     validate(transcript, "transcript")
     audible = audible_seconds(transcript)
     if not transcript["segments"] or audible < MIN_AUDIBLE_SECONDS:
@@ -109,6 +116,46 @@ def propose_edit_plan(transcript: dict, provider: Provider, brief: str | None = 
             f"above the silence threshold and {len(transcript['segments'])} speech segment(s) were "
             f"found. Check the recording's microphone input before editing."
         )
+
+
+def build_agent_request(transcript: dict, brief: str | None, plan_path: Path,
+                        build_command: str) -> str:
+    """The edit request a coding agent (Claude Code, OpenCode, ...) works from.
+
+    Same guidance, same inputs and same validation as tool mode; the agent
+    writes the plan to a file and runs the build step, which reports any errors
+    for it to fix.
+    """
+    schema = json.dumps(build_tool().input_schema, indent=2)
+    return f"""# Frameflow edit request
+
+{EDITOR_GUIDANCE}
+
+## How to submit
+
+Write the plan as JSON to `{plan_path.as_posix()}`, matching the schema below, then run:
+
+```
+{build_command}
+```
+
+That validates the plan and builds the Shotcut project. If it reports errors, fix the plan and run it again.
+
+## Recording
+
+{build_user_prompt(transcript, brief)}
+
+## Edit plan schema
+
+```json
+{schema}
+```
+"""
+
+
+def propose_edit_plan(transcript: dict, provider: Provider, brief: str | None = None,
+                      max_attempts: int = 4) -> dict:
+    ensure_speech(transcript)
     return provider.submit(
         system=SYSTEM_PROMPT,
         user=build_user_prompt(transcript, brief),

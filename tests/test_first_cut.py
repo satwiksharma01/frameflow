@@ -16,6 +16,7 @@ from project.editor_agent import (
     TOOL_NAME,
     NoSpeechError,
     audible_seconds,
+    build_agent_request,
     build_tool,
     build_user_prompt,
     check_plan,
@@ -153,6 +154,50 @@ class TestEditPlanContract(unittest.TestCase):
         self.assertEqual(tool.name, TOOL_NAME)
         self.assertNotIn("$schema", tool.input_schema)
         self.assertIn("decisions", tool.input_schema["properties"])
+
+
+class TestAgentMode(unittest.TestCase):
+    """A coding agent (Claude Code, OpenCode, ...) as the editor, no API key."""
+
+    def test_request_carries_guidance_inputs_schema_and_next_step(self):
+        from pathlib import Path
+        request = build_agent_request(TRANSCRIPT, "keep it tight", Path("out/edit_plan.json"),
+                                      'python -m project.first_cut "talk.mp4" --build')
+        self.assertIn("place cut points", request.lower())
+        self.assertIn("[2.60-5.00]", request)                  # measured silences
+        self.assertIn("Today, today I want", request)          # transcript
+        self.assertIn("keep it tight", request)                # brief
+        self.assertIn("out/edit_plan.json", request)           # where to write
+        self.assertIn("--build", request)                      # how to validate
+        self.assertIn('"decisions"', request)                  # schema
+        self.assertNotIn("submit_edit_plan", request)          # tool mode only
+
+    def test_build_reports_every_problem_for_the_agent_to_fix(self):
+        import tempfile
+        from pathlib import Path
+        from project.first_cut import PlanError, load_plan
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            bad = copy.deepcopy(GOOD_PLAN)
+            bad["decisions"] = bad["decisions"][:2]
+            (out / "edit_plan.json").write_text(json.dumps(bad), encoding="utf-8")
+            with self.assertRaisesRegex(PlanError, "needs fixing"):
+                load_plan(out, TRANSCRIPT)
+
+            (out / "edit_plan.json").write_text("{not json", encoding="utf-8")
+            with self.assertRaisesRegex(PlanError, "not valid JSON"):
+                load_plan(out, TRANSCRIPT)
+
+            (out / "edit_plan.json").write_text(json.dumps(GOOD_PLAN), encoding="utf-8")
+            self.assertEqual(load_plan(out, TRANSCRIPT), GOOD_PLAN)
+
+    def test_missing_plan_points_at_the_request(self):
+        import tempfile
+        from pathlib import Path
+        from project.first_cut import PlanError, load_plan
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PlanError, "edit_request.md"):
+                load_plan(Path(tmp), TRANSCRIPT)
 
 
 class _ProviderThatMustNotBeCalled:
