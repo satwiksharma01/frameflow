@@ -1,0 +1,42 @@
+{
+  "schema_version": "0.2.0",
+  "project": {
+    "name": "meet-recording-first-cut",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "source_frame_rate_mode": "normalized_from_vfr"
+  },
+  "tracks": [
+    {
+      "id": "V1",
+      "type": "video",
+      "clips": [
+        {
+          "id": "clip1",
+          "source": "media/meet-recording-cfr30.mp4",
+          "source_in": 0.0,
+          "source_out": 4.5,
+          "timeline_start": 0.0,
+          "timeline_duration": 4.5
+        },
+        {
+          "id": "clip2",
+          "source": "media/meet-recording-cfr30.mp4",
+          "source_in": 7.0,
+          "source_out": 18.0,
+          "timeline_start": 4.5,
+          "timeline_duration": 11.0
+        },
+        {
+          "id": "clip3",
+          "source": "media/meet-recording-cfr30.mp4",
+          "source_in": 20.5,
+          "source_out": 25.7,
+          "timeline_start": 15.5,
+          "timeline_duration": 5.2
+        }
+      ]
+    }
+  ]
+}
