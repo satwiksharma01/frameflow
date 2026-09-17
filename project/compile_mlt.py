@@ -24,9 +24,14 @@ from fractions import Fraction
 from pathlib import Path
 
 from project.media import analyze
+from project.shotcut_template import (
+    TRACK_TYPE_PROPERTY,
+    add_background,
+    add_tractor,
+    build_root,
+)
+from project.sidecar import write_sidecar
 from project.validate import validate
-
-SHOTCUT_TITLE = "Shotcut version 26.8.1"
 
 COMMON_RATES = {
     24000 / 1001: (24000, 1001),
@@ -85,28 +90,7 @@ def build_mlt(ir: dict) -> ET.Element:
     source_path = Path(sources.pop())
     source_frames = sec_to_frames(analyze(source_path).duration_seconds, fps)
 
-    mlt = ET.Element("mlt", {
-        "LC_NUMERIC": "C",
-        "version": "7.9.0",
-        "title": SHOTCUT_TITLE,
-        "producer": "main_bin",
-    })
-    ET.SubElement(mlt, "profile", {
-        "description": "frameflow-auto",
-        "width": str(width),
-        "height": str(height),
-        "progressive": "1",
-        "sample_aspect_num": "1",
-        "sample_aspect_den": "1",
-        "display_aspect_num": str(dar_num),
-        "display_aspect_den": str(dar_den),
-        "frame_rate_num": str(num),
-        "frame_rate_den": str(den),
-        "colorspace": "709",
-    })
-
-    main_bin = ET.SubElement(mlt, "playlist", {"id": "main_bin"})
-    ET.SubElement(main_bin, "property", {"name": "xml_retain"}).text = "1"
+    mlt = build_root(width, height, num, den, dar_num, dar_den)
 
     producer = ET.SubElement(
         mlt, "producer", {"id": "producer0", "in": "0", "out": str(source_frames - 1)}
@@ -118,6 +102,9 @@ def build_mlt(ir: dict) -> ET.Element:
     playlist = ET.SubElement(mlt, "playlist", {"id": "playlist0"})
     ET.SubElement(playlist, "property", {"name": "shotcut:video"}).text = "1"
     ET.SubElement(playlist, "property", {"name": "shotcut:name"}).text = track["id"]
+    # MLT has no concept of our track semantics (video vs broll vs graphics),
+    # so carry it as a custom property rather than losing it on round-trip.
+    ET.SubElement(playlist, "property", {"name": TRACK_TYPE_PROPERTY}).text = track["type"]
 
     cursor = 0
     for clip in clips:
@@ -144,42 +131,8 @@ def build_mlt(ir: dict) -> ET.Element:
         })
         cursor += length_f
 
-    total_out = cursor - 1
-
-    black = ET.SubElement(mlt, "producer", {"id": "black", "in": "0", "out": str(total_out)})
-    ET.SubElement(black, "property", {"name": "length"}).text = str(cursor)
-    ET.SubElement(black, "property", {"name": "eof"}).text = "pause"
-    ET.SubElement(black, "property", {"name": "resource"}).text = "0"
-    ET.SubElement(black, "property", {"name": "mlt_service"}).text = "color"
-    ET.SubElement(black, "property", {"name": "mlt_image_format"}).text = "rgba"
-
-    background = ET.SubElement(mlt, "playlist", {"id": "background"})
-    ET.SubElement(background, "entry", {"producer": "black", "in": "0", "out": str(total_out)})
-
-    tractor = ET.SubElement(mlt, "tractor", {
-        "id": "tractor0",
-        "title": SHOTCUT_TITLE,
-        "in": "0",
-        "out": str(total_out),
-    })
-    ET.SubElement(tractor, "property", {"name": "shotcut"}).text = "1"
-    ET.SubElement(tractor, "property", {"name": "shotcut:projectAudioChannels"}).text = "2"
-    ET.SubElement(tractor, "track", {"producer": "background"})
-    ET.SubElement(tractor, "track", {"producer": "playlist0"})
-
-    mix = ET.SubElement(tractor, "transition", {"id": "transition0"})
-    ET.SubElement(mix, "property", {"name": "a_track"}).text = "0"
-    ET.SubElement(mix, "property", {"name": "b_track"}).text = "1"
-    ET.SubElement(mix, "property", {"name": "mlt_service"}).text = "mix"
-    ET.SubElement(mix, "property", {"name": "always_active"}).text = "1"
-    ET.SubElement(mix, "property", {"name": "sum"}).text = "1"
-
-    blend = ET.SubElement(tractor, "transition", {"id": "transition1"})
-    ET.SubElement(blend, "property", {"name": "a_track"}).text = "0"
-    ET.SubElement(blend, "property", {"name": "b_track"}).text = "1"
-    ET.SubElement(blend, "property", {"name": "mlt_service"}).text = "qtblend"
-    ET.SubElement(blend, "property", {"name": "always_active"}).text = "1"
-
+    add_background(mlt, cursor)
+    add_tractor(mlt, cursor, ["playlist0"], project["source_frame_rate_mode"])
     return mlt
 
 
@@ -188,6 +141,9 @@ def compile_file(ir_path: Path | str, output_path: Path | str) -> Path:
     tree = ET.ElementTree(build_mlt(ir))
     ET.indent(tree, space="  ")
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
+    # Shotcut strips our custom properties when it rewrites the project, so
+    # the metadata MLT cannot hold is written beside the file instead.
+    write_sidecar(output_path, ir)
     return Path(output_path)
 
 
