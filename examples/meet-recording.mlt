@@ -12,6 +12,7 @@
   <playlist id="playlist0">
     <property name="shotcut:video">1</property>
     <property name="shotcut:name">V1</property>
+    <property name="frameflow:track_type">video</property>
     <entry producer="producer0" in="0" out="134" />
     <entry producer="producer0" in="210" out="539" />
     <entry producer="producer0" in="615" out="770" />
@@ -29,6 +30,7 @@
   <tractor id="tractor0" title="Shotcut version 26.8.1" in="0" out="620">
     <property name="shotcut">1</property>
     <property name="shotcut:projectAudioChannels">2</property>
+    <property name="frameflow:source_frame_rate_mode">normalized_from_vfr</property>
     <track producer="background" />
     <track producer="playlist0" />
     <transition id="transition0">
