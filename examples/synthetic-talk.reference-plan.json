@@ -1,0 +1,54 @@
+{
+  "source_duration_seconds": 34.8,
+  "reasoning": "Hand-written reference cut: cut points sit inside measured silences with ~0.25s kept around speech.",
+  "decisions": [
+    {
+      "action": "keep",
+      "start": 0.0,
+      "end": 2.92,
+      "reason": "greeting"
+    },
+    {
+      "action": "remove",
+      "start": 2.92,
+      "end": 10.88,
+      "reason": "pause, false start \"how to, um\", pause"
+    },
+    {
+      "action": "keep",
+      "start": 10.88,
+      "end": 15.08,
+      "reason": "complete take of the topic sentence"
+    },
+    {
+      "action": "remove",
+      "start": 15.08,
+      "end": 23.18,
+      "reason": "pause, abandoned take \"installing the editor, which is\", pause"
+    },
+    {
+      "action": "keep",
+      "start": 23.18,
+      "end": 27.78,
+      "reason": "complete take; short comma pause kept"
+    },
+    {
+      "action": "remove",
+      "start": 27.78,
+      "end": 29.67,
+      "reason": "long pause"
+    },
+    {
+      "action": "keep",
+      "start": 29.67,
+      "end": 31.91,
+      "reason": "closing line"
+    },
+    {
+      "action": "remove",
+      "start": 31.91,
+      "end": 34.8,
+      "reason": "trailing silence"
+    }
+  ]
+}
