@@ -44,11 +44,19 @@ from project.engine_check import check_with_melt
 from project.media import MediaError, analyze, choose_cfr_rate, normalize_to_cfr
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
-from project.transcribe import TranscriptionError, transcribe
+from project.cutpoints import snap_plan
+from project.transcribe import (
+    MICRO_PAUSE_MIN_SECONDS,
+    TranscriptionError,
+    build_timing_map,
+    transcribe,
+)
+from project.verify_cuts import VerificationError, verify_joins
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 TRANSCRIPT_FILE = "transcript.json"
+TIMING_FILE = "timing.json"
 PLAN_FILE = "edit_plan.json"
 REQUEST_FILE = "edit_request.md"
 
@@ -103,6 +111,12 @@ def prepare(video: Path, out_dir: Path, language: str) -> dict:
     _write_json(out_dir / TRANSCRIPT_FILE, transcript)
     print(f"    {len(transcript['segments'])} segments, {len(transcript['silences'])} silences")
     ensure_speech(transcript)
+
+    _step("Mapping word timings and micro-pauses")
+    timing = build_timing_map(source, language=language)
+    _write_json(out_dir / TIMING_FILE, timing)
+    print(f"    {len(timing['words'])} words, {len(timing['pauses'])} pauses over "
+          f"{MICRO_PAUSE_MIN_SECONDS}s")
     return transcript
 
 
@@ -123,12 +137,25 @@ def load_plan(out_dir: Path, transcript: dict) -> dict:
     return plan
 
 
-def build(video: Path, out_dir: Path, plan: dict) -> Path:
+def build(video: Path, out_dir: Path, plan: dict, verify: bool = True) -> Path:
     transcript = json.loads((out_dir / TRANSCRIPT_FILE).read_text(encoding="utf-8"))
     source = Path(transcript["source"])
     info = analyze(source)
     kept = sum(d["end"] - d["start"] for d in plan["decisions"] if d["action"] == "keep")
     print(f"    {len(plan['decisions'])} decisions; keeps {kept:.1f}s of {info.duration_seconds:.1f}s")
+
+    timing_path = out_dir / TIMING_FILE
+    timing = json.loads(timing_path.read_text(encoding="utf-8")) if timing_path.exists() else None
+    if timing:
+        _step("Placing cut points in measured pauses")
+        plan, notes = snap_plan(plan, timing["pauses"], info.nominal_fps)
+        moved = [n for n in notes if n.status == "snapped"]
+        print(f"    {len(moved)} of {len(plan['decisions']) - 1} boundaries moved "
+              f"(largest {max((abs(n.moved_ms) for n in moved), default=0)}ms)")
+        for note in notes:
+            if note.status in ("no-pause", "tight", "unchanged"):
+                print(f"    ! boundary at {note.planned:.2f}s: {note.detail}")
+        _write_json(out_dir / PLAN_FILE, plan)
 
     _step("Building the project")
     ir = edit_plan_to_ir(
@@ -147,11 +174,25 @@ def build(video: Path, out_dir: Path, plan: dict) -> Path:
         print("    loaded cleanly")
     else:
         print("    melt not found; skipped")
+
+    if verify and timing:
+        _step("Listening to every cut")
+        try:
+            checks = verify_joins(ir, timing, project)
+        except VerificationError as e:
+            print(f"    skipped: {e}")
+        else:
+            suspect = [c for c in checks if not c.ok]
+            print(f"    {len(checks) - len(suspect)} of {len(checks)} joins sound clean")
+            for check in suspect:
+                print(f"    ! {check.summary}")
+
     return project
 
 
 def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str | None,
-              model: str | None, base_url: str | None, language: str) -> Path:
+              model: str | None, base_url: str | None, language: str,
+              verify: bool = True) -> Path:
     provider = get_provider(provider_name, model, base_url)
     transcript = prepare(video, out_dir, language)
 
@@ -160,7 +201,7 @@ def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str 
     _write_json(out_dir / PLAN_FILE, plan)
     if provider.served_by and provider.served_by != provider.model:
         print(f"    served by {provider.served_by} (fallback)")
-    return build(video, out_dir, plan)
+    return build(video, out_dir, plan, verify=verify)
 
 
 def _command(video: Path, out: str | None, *flags: str) -> str:
@@ -185,6 +226,8 @@ def main() -> None:
     parser.add_argument("--language", default="auto", help="spoken language code, or 'auto'")
     parser.add_argument("--out", help="output folder (default: output/<video name>)")
     parser.add_argument("--open", action="store_true", help="open the result in Shotcut")
+    parser.add_argument("--no-verify", action="store_true",
+                        help="skip listening to each cut (faster, but a clipped word can slip through)")
     args = parser.parse_args()
 
     video = Path(args.video)
@@ -208,10 +251,11 @@ def main() -> None:
             if not transcript_path.exists():
                 sys.exit(f"no transcript at {transcript_path}; run with --prepare first")
             transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
-            project = build(video, out_dir, load_plan(out_dir, transcript))
+            project = build(video, out_dir, load_plan(out_dir, transcript),
+                            verify=not args.no_verify)
         else:
             project = first_cut(video, out_dir, args.brief, args.provider, args.model,
-                                args.base_url, args.language)
+                                args.base_url, args.language, verify=not args.no_verify)
     except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 

@@ -29,6 +29,11 @@ DEFAULT_MODEL = REPO_ROOT / "models" / "ggml-large-v3-turbo-q5_0.bin"
 SILENCE_NOISE_DB = -35
 SILENCE_MIN_SECONDS = 0.5
 
+# Cut points need finer resolution than the editor's view of the recording.
+# A gap this short is not a pause a listener notices, but it is often the only
+# safe place to put a cut between two words.
+MICRO_PAUSE_MIN_SECONDS = 0.08
+
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END = re.compile(r"silence_end:\s*([\d.]+)")
 
@@ -84,7 +89,8 @@ def extract_audio(video: Path | str, wav: Path | str, duration: float) -> None:
         raise TranscriptionError(f"audio extraction failed: {result.stderr.strip()}")
 
 
-def parse_silencedetect(stderr: str, duration: float) -> list[dict]:
+def parse_silencedetect(stderr: str, duration: float,
+                        min_seconds: float = SILENCE_MIN_SECONDS) -> list[dict]:
     silences = []
     start = None
     for line in stderr.splitlines():
@@ -94,21 +100,22 @@ def parse_silencedetect(stderr: str, duration: float) -> list[dict]:
             silences.append({"start": round(start, 3), "end": round(float(m.group(1)), 3)})
             start = None
     # Audio that ends while still silent reports a start with no matching end.
-    if start is not None and duration - start >= SILENCE_MIN_SECONDS:
+    if start is not None and duration - start >= min_seconds:
         silences.append({"start": round(start, 3), "end": round(duration, 3)})
     return silences
 
 
-def detect_silences(wav: Path | str, duration: float) -> list[dict]:
+def detect_silences(wav: Path | str, duration: float,
+                    min_seconds: float = SILENCE_MIN_SECONDS) -> list[dict]:
     result = subprocess.run(
         [_find_tool("ffmpeg"), "-v", "info", "-i", str(wav),
-         "-af", f"silencedetect=noise={SILENCE_NOISE_DB}dB:d={SILENCE_MIN_SECONDS}",
+         "-af", f"silencedetect=noise={SILENCE_NOISE_DB}dB:d={min_seconds}",
          "-f", "null", "-"],
         capture_output=True, text=True, timeout=1800,
     )
     if result.returncode != 0:
         raise TranscriptionError(f"silence detection failed: {result.stderr[-2000:]}")
-    return parse_silencedetect(result.stderr, duration)
+    return parse_silencedetect(result.stderr, duration, min_seconds)
 
 
 def whisper_json_to_segments(whisper: dict) -> list[dict]:
@@ -128,17 +135,48 @@ def whisper_json_to_segments(whisper: dict) -> list[dict]:
     return segments
 
 
-def run_whisper(wav: Path | str, model: Path, language: str, out_base: Path) -> dict:
+def run_whisper(wav: Path | str, model: Path, language: str, out_base: Path,
+                per_word: bool = False) -> dict:
+    extra = ["-ml", "1", "-sow"] if per_word else []
     result = subprocess.run(
         [find_whisper_cli(), "-m", str(model), "-f", str(wav), "-l", language,
          "--suppress-nst",  # drop non-speech annotations like "*Trips*" or "[Music]"
-         "-oj", "-of", str(out_base), "-np"],
+         *extra, "-oj", "-of", str(out_base), "-np"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=4 * 3600,
     )
     json_path = out_base.with_suffix(".json")
     if result.returncode != 0 or not json_path.exists():
         raise TranscriptionError(f"whisper-cli failed: {result.stderr[-2000:]}")
     return json.loads(json_path.read_text(encoding="utf-8"))
+
+
+def build_timing_map(video: Path | str, model: Path | str | None = None,
+                     language: str = "auto") -> dict:
+    """Word timings and micro-pauses, for placing cut points precisely.
+
+    Separate from the transcript on purpose. The transcript is what the editor
+    reads to decide *what* to cut; this is what the pipeline uses afterwards to
+    decide exactly *where* the cut goes. Feeding hundreds of 0.08s gaps to the
+    editor would bury the signal it actually needs.
+    """
+    video = Path(video)
+    info = analyze(video)
+    if not info.has_audio:
+        raise TranscriptionError(f"{video.name} has no audio track")
+    model_path = find_model(model)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / "audio.wav"
+        extract_audio(video, wav, info.duration_seconds)
+        whisper = run_whisper(wav, model_path, language, Path(tmp) / "words", per_word=True)
+        pauses = detect_silences(wav, info.duration_seconds, MICRO_PAUSE_MIN_SECONDS)
+
+    return {
+        "source": video.resolve().as_posix(),
+        "duration_seconds": round(info.duration_seconds, 3),
+        "words": whisper_json_to_segments(whisper),
+        "pauses": pauses,
+    }
 
 
 def transcribe(video: Path | str, model: Path | str | None = None, language: str = "auto") -> dict:
