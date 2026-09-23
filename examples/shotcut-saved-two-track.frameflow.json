@@ -1,0 +1,48 @@
+{
+  "schema_version": "0.2.0",
+  "project": {
+    "name": "t",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "source_frame_rate_mode": "cfr"
+  },
+  "tracks": [
+    {
+      "id": "V1",
+      "type": "video",
+      "clips": [
+        {
+          "id": "clip1",
+          "source": "E:/my projects/frameflow/media/meet-recording-cfr30.mp4",
+          "source_in": 0.0,
+          "source_out": 5.0,
+          "timeline_start": 0.0,
+          "timeline_duration": 5.0
+        },
+        {
+          "id": "clip2",
+          "source": "E:/my projects/frameflow/media/meet-recording-cfr30.mp4",
+          "source_in": 8.0,
+          "source_out": 13.0,
+          "timeline_start": 5.0,
+          "timeline_duration": 5.0
+        }
+      ]
+    },
+    {
+      "id": "V2",
+      "type": "broll",
+      "clips": [
+        {
+          "id": "clip1",
+          "source": "E:/my projects/frameflow/media/synthetic-talk.mp4",
+          "source_in": 2.0,
+          "source_out": 5.0,
+          "timeline_start": 3.0,
+          "timeline_duration": 3.0
+        }
+      ]
+    }
+  ]
+}
