@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_IR = REPO_ROOT / "examples" / "meet-recording.ir.json"
 EXAMPLE_MLT = REPO_ROOT / "examples" / "meet-recording.mlt"
 HUMAN_EDITED_MLT = REPO_ROOT / "examples" / "human-edited.mlt"
+SHOTCUT_SAVED_TWO_TRACK = REPO_ROOT / "examples" / "shotcut-saved-two-track.mlt"
 SHOTCUT_REFERENCE = REPO_ROOT / "phase0" / "shotcut_reference.mlt"
 NORMALIZED_MEDIA = REPO_ROOT / "media" / "meet-recording-cfr30.mp4"
 SECOND_MEDIA = REPO_ROOT / "media" / "synthetic-talk.mp4"
@@ -438,6 +439,41 @@ class TestPortableProjects(unittest.TestCase):
                 self.skipTest("media not present")
             text = compile_file(ir_path, Path(tmp) / "p.mlt").read_text(encoding="utf-8")
         self.assertIn('<property name="shotcut:projectFolder">0</property>', text)
+
+
+class TestShotcutSavedMultiTrack(unittest.TestCase):
+    """Phase 3.7's gate, captured. This file is a two-track Frameflow project
+    that Shotcut opened, rendered as a real timeline, and saved over."""
+
+    def setUp(self):
+        if not SHOTCUT_SAVED_TWO_TRACK.exists():
+            self.skipTest("Shotcut-saved fixture not present")
+        self.ir = parse_mlt(SHOTCUT_SAVED_TWO_TRACK)
+
+    def test_both_tracks_survive_a_human_save(self):
+        self.assertEqual([t["id"] for t in self.ir["tracks"]], ["V1", "V2"])
+
+    def test_clips_and_timings_are_unchanged(self):
+        v1, v2 = self.ir["tracks"]
+        self.assertEqual([(c["timeline_start"], c["timeline_duration"]) for c in v1["clips"]],
+                         [(0.0, 5.0), (5.0, 5.0)])
+        self.assertEqual([(c["timeline_start"], c["timeline_duration"]) for c in v2["clips"]],
+                         [(3.0, 3.0)])
+
+    def test_the_second_source_file_survives(self):
+        sources = {Path(c["source"]).name for t in self.ir["tracks"] for c in t["clips"]}
+        self.assertEqual(sources, {"meet-recording-cfr30.mp4", "synthetic-talk.mp4"})
+
+    def test_shotcut_stripped_every_frameflow_property(self):
+        """Finding 3, now confirmed for multi-track: our namespace does not survive."""
+        self.assertNotIn("frameflow:", SHOTCUT_SAVED_TWO_TRACK.read_text(encoding="utf-8"))
+
+    def test_the_sidecar_is_what_restores_the_broll_track_type(self):
+        """Without it the B-roll track degrades to a plain video track, because
+        shotcut:name is the only track identity Shotcut keeps."""
+        without = parse_mlt(SHOTCUT_SAVED_TWO_TRACK, use_sidecar=False)
+        self.assertEqual([t["type"] for t in without["tracks"]], ["video", "video"])
+        self.assertEqual([t["type"] for t in self.ir["tracks"]], ["video", "broll"])
 
 
 if __name__ == "__main__":
