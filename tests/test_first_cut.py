@@ -155,6 +155,14 @@ class TestEditPlanContract(unittest.TestCase):
         self.assertNotIn("$schema", tool.input_schema)
         self.assertIn("decisions", tool.input_schema["properties"])
 
+    def test_the_editor_is_offered_the_confidence_field(self):
+        """Both modes hand the editor this schema, so the field only exists in
+        practice if it survives into the tool definition and the request file."""
+        decision = build_tool().input_schema["properties"]["decisions"]["items"]
+        self.assertEqual(decision["properties"]["confidence"]["enum"], ["high", "low"])
+        self.assertNotIn("confidence", decision["required"])
+        self.assertEqual(decision["properties"]["action"]["enum"], ["keep", "remove"])
+
 
 class TestAgentMode(unittest.TestCase):
     """A coding agent (Claude Code, OpenCode, ...) as the editor, no API key."""
@@ -171,6 +179,7 @@ class TestAgentMode(unittest.TestCase):
         self.assertIn("--build", request)                      # how to validate
         self.assertIn('"decisions"', request)                  # schema
         self.assertNotIn("submit_edit_plan", request)          # tool mode only
+        self.assertIn('"confidence"', request)                 # how to flag doubt
 
     def test_build_reports_every_problem_for_the_agent_to_fix(self):
         import tempfile

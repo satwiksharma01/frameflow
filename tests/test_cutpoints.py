@@ -99,6 +99,17 @@ class TestSnapPlan(unittest.TestCase):
         self.assertTrue(all(a["end"] == b["start"] for a, b in
                             zip(snapped["decisions"], snapped["decisions"][1:])))
 
+    def test_snapping_keeps_a_low_confidence_flag(self):
+        """Snapping rewrites boundaries; it must not drop the editor's doubt.
+
+        Losing the flag here would hide exactly the decisions the creator was
+        told to review, and nothing downstream would notice.
+        """
+        p = plan(5.0)
+        p["decisions"][1]["confidence"] = "low"
+        snapped, _ = snap_plan(p, [{"start": 5.4, "end": 6.4}], FPS)
+        self.assertEqual(snapped["decisions"][1]["confidence"], "low")
+
     def test_plan_stays_contiguous_and_covers_the_source(self):
         snapped, _ = snap_plan(plan(5.0, 12.0, 20.0),
                                [{"start": 5.2, "end": 6.0}, {"start": 11.5, "end": 12.5},

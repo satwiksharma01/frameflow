@@ -46,7 +46,7 @@ Cut what a skilled human editor would cut from a talking-head or screen recordin
 
 Place cut points using the measured silences, not the transcript's segment boundaries. Transcript segments absorb neighbouring pauses, so a segment can begin seconds before its first word. A cut between two sentences belongs inside the silence that separates them.
 
-When you are unsure whether something should go, keep it and say so in the reason. The creator reviews every decision in the editor, so "kept: possibly a repeated take" is more useful than a confident wrong cut.
+When you are unsure about a decision, set its `confidence` to "low" and say what the doubt is in the reason. Default to keeping what you are unsure about: "kept: possibly a repeated take" is more useful than a confident wrong cut. Mark an uncertain removal "low" as well - the creator can see everything you kept, but what you cut is no longer in front of them, so a doubtful cut is the decision they most need pointed out.
 
 The decisions must cover the whole source from 0 to its duration, in order, with no gaps or overlaps, so every second is explicitly kept or removed."""
 
