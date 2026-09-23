@@ -36,7 +36,8 @@ def ir(*spans, gaps=None):
 
 
 def op(action, start, end, **extra):
-    return {"operations": [{"action": action, "start": start, "end": end, "reason": "test", **extra}]}
+    return {"summary": "test", "operations": [
+        {"action": action, "start": start, "end": end, "reason": "test", **extra}]}
 
 
 def run(project, doc, changes=UNCHANGED, pauses=None):
@@ -186,7 +187,7 @@ class TestHumanEditsWin(unittest.TestCase):
         current = parse_mlt(HUMAN_EDITED)
         changes = reconcile(read_sidecar(HUMAN_EDITED), current)
         source = current["tracks"][0]["clips"][0]["source"]
-        result = run(current, {"operations": [{
+        result = run(current, {"summary": "test", "operations": [{
             "action": "remove", "start": 8.0, "end": 9.0, "reason": "test",
             "source": Path(source).name}]}, changes)
         self.assertEqual([(c["source_in"], c["source_out"]) for c in result["tracks"][0]["clips"]],
@@ -215,6 +216,14 @@ class TestSources(unittest.TestCase):
 
     def test_the_schema_rejects_an_unknown_action(self):
         self.assertIn("schema", check(op("move", 1, 2), ir((0, 4)), UNCHANGED)[0])
+
+    def test_no_operations_is_a_valid_answer(self):
+        """"Nothing to change" has to be sayable, or an editor is forced to invent a change."""
+        self.assertEqual(check({"summary": "already as tight as it can be", "operations": []},
+                               ir((0, 4)), UNCHANGED), [])
+
+    def test_a_summary_is_required(self):
+        self.assertIn("summary", check({"operations": []}, ir((0, 4)), UNCHANGED)[0])
 
     def test_nothing_is_changed_in_place(self):
         base = ir((0, 4), (6, 10))

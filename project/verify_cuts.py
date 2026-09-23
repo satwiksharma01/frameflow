@@ -19,6 +19,7 @@ import difflib
 import re
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -122,8 +123,13 @@ def _hear(wav: Path, start: float, end: float, model: Path, tmp: Path) -> str:
 
 def verify_joins(ir: dict, timing: dict, mlt_path: Path | str,
                  model: Path | str | None = None,
-                 context: float = CONTEXT_SECONDS) -> list[JoinCheck]:
-    """Render the project and check the words either side of every cut survived."""
+                 context: float = CONTEXT_SECONDS,
+                 include: Callable[[dict, dict], bool] | None = None) -> list[JoinCheck]:
+    """Render the project and check the words either side of every cut survived.
+
+    `include(left, right)` limits the check to some joins - an edit that makes
+    two new cuts should not spend a Whisper pass on each of the thirty it left alone.
+    """
     find_whisper_cli()  # fail fast with a clear message if it is missing
     model_path = find_model(model)
     clips = ir["tracks"][0]["clips"]
@@ -138,6 +144,8 @@ def verify_joins(ir: dict, timing: dict, mlt_path: Path | str,
             joined_at = left["timeline_start"] + left["timeline_duration"]
             if abs(right["timeline_start"] - joined_at) > 0.05:
                 continue  # a gap, not a join - nothing to clip
+            if include is not None and not include(left, right):
+                continue
             before, after = words_at_boundary(words, left, right)
             if not before and not after:
                 continue
