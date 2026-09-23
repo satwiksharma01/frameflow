@@ -21,6 +21,7 @@ EXAMPLE_MLT = REPO_ROOT / "examples" / "meet-recording.mlt"
 HUMAN_EDITED_MLT = REPO_ROOT / "examples" / "human-edited.mlt"
 SHOTCUT_REFERENCE = REPO_ROOT / "phase0" / "shotcut_reference.mlt"
 NORMALIZED_MEDIA = REPO_ROOT / "media" / "meet-recording-cfr30.mp4"
+SECOND_MEDIA = REPO_ROOT / "media" / "synthetic-talk.mp4"
 
 
 class TestParseTime(unittest.TestCase):
@@ -193,6 +194,139 @@ class TestSidecar(unittest.TestCase):
     def test_merge_without_sidecar_is_identity(self):
         parsed = {"project": {"name": "p"}, "tracks": []}
         self.assertEqual(merge_sidecar(parsed, None), parsed)
+
+
+def _multitrack_ir(main_source: Path, broll_source: Path) -> dict:
+    """A main video track with B-roll laid over its middle, from a second file."""
+    return {
+        "schema_version": "0.2.0",
+        "project": {"name": "two-track", "width": 1920, "height": 1080, "fps": 30,
+                    "source_frame_rate_mode": "cfr"},
+        "tracks": [
+            {"id": "V1", "type": "video", "clips": [
+                {"id": "clip1", "source": main_source.as_posix(), "source_in": 0.0,
+                 "source_out": 4.0, "timeline_start": 0.0, "timeline_duration": 4.0},
+                {"id": "clip2", "source": main_source.as_posix(), "source_in": 6.0,
+                 "source_out": 10.0, "timeline_start": 4.0, "timeline_duration": 4.0},
+            ]},
+            {"id": "V2", "type": "broll", "clips": [
+                {"id": "clip1", "source": broll_source.as_posix(), "source_in": 1.0,
+                 "source_out": 3.0, "timeline_start": 2.0, "timeline_duration": 2.0},
+            ]},
+        ],
+    }
+
+
+class TestMultiTrack(unittest.TestCase):
+    """Phase 3.7. Until this worked, B-roll, short-form and graphics were all blocked."""
+
+    def setUp(self):
+        if not (NORMALIZED_MEDIA.exists() and SECOND_MEDIA.exists()):
+            self.skipTest("two media files are needed to compile two sources")
+        from project.compile_mlt import build_mlt
+        self.ir = _multitrack_ir(NORMALIZED_MEDIA, SECOND_MEDIA)
+        self.mlt = build_mlt(self.ir)
+
+    def test_each_distinct_source_gets_one_producer(self):
+        producers = self.mlt.findall("producer")
+        resources = [p.find("property[@name='resource']").text for p in producers
+                     if p.get("id", "").startswith("producer")]
+        self.assertEqual(len(resources), 2)
+        self.assertEqual(len(set(resources)), 2)
+
+    def test_clips_from_the_same_file_share_a_producer(self):
+        """Two clips cut from one recording must not declare it twice."""
+        playlist = self.mlt.find("playlist[@id='playlist0']")
+        used = {e.get("producer") for e in playlist.findall("entry")}
+        self.assertEqual(len(used), 1)
+
+    def test_each_track_becomes_its_own_playlist(self):
+        ids = [p.get("id") for p in self.mlt.findall("playlist")]
+        self.assertIn("playlist0", ids)
+        self.assertIn("playlist1", ids)
+
+    def test_the_broll_track_points_at_the_second_file(self):
+        entry = self.mlt.find("playlist[@id='playlist1']/entry")
+        producer = self.mlt.find(f"producer[@id='{entry.get('producer')}']")
+        self.assertTrue(
+            producer.find("property[@name='resource']").text.endswith("synthetic-talk.mp4"))
+
+    def test_an_upper_track_starting_late_gets_a_blank(self):
+        blank = self.mlt.find("playlist[@id='playlist1']/blank")
+        self.assertEqual(int(blank.get("length")), 60)      # 2.0s at 30fps
+
+    def test_the_tractor_wires_background_plus_both_tracks(self):
+        tractor = self.mlt.find("tractor")
+        producers = [t.get("producer") for t in tractor.findall("track")]
+        self.assertEqual(producers, ["background", "playlist0", "playlist1"])
+
+    def test_every_content_track_gets_its_own_pair_of_transitions(self):
+        tractor = self.mlt.find("tractor")
+        services = [t.find("property[@name='mlt_service']").text
+                    for t in tractor.findall("transition")]
+        self.assertEqual(services, ["mix", "qtblend", "mix", "qtblend"])
+
+    def test_the_background_spans_the_longest_track(self):
+        """A shorter first track must not end the project before an upper one."""
+        ir = _multitrack_ir(NORMALIZED_MEDIA, SECOND_MEDIA)
+        ir["tracks"][1]["clips"][0]["timeline_start"] = 20.0   # B-roll outlasts V1
+        from project.compile_mlt import build_mlt
+        mlt = build_mlt(ir)
+        background = mlt.find("playlist[@id='background']/entry")
+        self.assertEqual(int(background.get("out")), 22 * 30 - 1)
+
+    def test_two_tracks_round_trip(self):
+        from project.compile_mlt import compile_file
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = Path(tmp) / "two-track.ir.json"
+            ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+            out = Path(tmp) / "two-track.mlt"
+            compile_file(ir_path, out)
+            parsed = parse_mlt(out)
+        self.assertEqual(quantize_ir(self.ir), quantize_ir(parsed))
+
+    def test_track_semantics_survive_the_round_trip(self):
+        from project.compile_mlt import compile_file
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = Path(tmp) / "two-track.ir.json"
+            ir_path.write_text(json.dumps(self.ir), encoding="utf-8")
+            out = Path(tmp) / "two-track.mlt"
+            compile_file(ir_path, out)
+            parsed = parse_mlt(out)
+        self.assertEqual([t["type"] for t in parsed["tracks"]], ["video", "broll"])
+        self.assertEqual([t["id"] for t in parsed["tracks"]], ["V1", "V2"])
+
+
+class TestCompilerRefusals(unittest.TestCase):
+    """What the compiler will not guess at, and says so."""
+
+    def _ir(self, tracks):
+        return {"schema_version": "0.2.0",
+                "project": {"name": "x", "width": 1920, "height": 1080, "fps": 30,
+                            "source_frame_rate_mode": "cfr"},
+                "tracks": tracks}
+
+    def test_an_audio_track_is_refused_by_name(self):
+        from project.compile_mlt import build_mlt
+        ir = self._ir([{"id": "A1", "type": "audio", "clips": [
+            {"id": "c1", "source": "x.wav", "timeline_start": 0.0, "timeline_duration": 1.0}]}])
+        with self.assertRaises(NotImplementedError) as cm:
+            build_mlt(ir)
+        self.assertIn("A1", str(cm.exception))
+
+    def test_a_caption_clip_with_no_source_is_refused_by_name(self):
+        from project.compile_mlt import build_mlt
+        ir = self._ir([{"id": "C1", "type": "captions", "clips": [
+            {"id": "caption7", "text": "hello", "timeline_start": 0.0,
+             "timeline_duration": 1.0}]}])
+        with self.assertRaises(NotImplementedError) as cm:
+            build_mlt(ir)
+        self.assertIn("caption7", str(cm.exception))
+
+    def test_a_project_with_no_clips_anywhere_is_an_error(self):
+        from project.compile_mlt import build_mlt
+        with self.assertRaises(ValueError):
+            build_mlt(self._ir([{"id": "V1", "type": "video", "clips": []}]))
 
 
 if __name__ == "__main__":
