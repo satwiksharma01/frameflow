@@ -4,16 +4,16 @@
   "title": "FrameflowOperations",
   "description": "Changes to a project the creator already has, as opposed to a first cut's full plan. Every operation addresses a span of the recording in source seconds, read from the transcript; code works out which clips that trims, splits, deletes or extends, so no operation ever names a clip.",
   "type": "object",
-  "required": ["operations"],
+  "required": ["summary", "operations"],
   "additionalProperties": false,
   "properties": {
     "summary": {
       "type": "string",
-      "description": "One or two sentences for the creator: what these operations do to their cut, and why."
+      "minLength": 1,
+      "description": "One or two sentences for the creator: what these operations do to their cut and why - or, with no operations, why nothing could or should change."
     },
     "operations": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["action", "start", "end", "reason"],
