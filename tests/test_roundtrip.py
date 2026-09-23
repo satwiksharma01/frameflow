@@ -350,7 +350,7 @@ class TestPortableProjects(unittest.TestCase):
                    "timeline_start": 0.0, "timeline_duration": 3.0}]}]}
         ir_path = root / "p.ir.json"
         ir_path.write_text(json.dumps(ir), encoding="utf-8")
-        return compile_file(ir_path, root / "p.mlt")
+        return compile_file(ir_path, root / "p.mlt", relative_paths=True)
 
     def setUp(self):
         if not SECOND_MEDIA.exists():
@@ -397,6 +397,47 @@ class TestPortableProjects(unittest.TestCase):
     def test_no_project_dir_means_absolute(self):
         from project.compile_mlt import resource_path
         self.assertTrue(Path(resource_path(SECOND_MEDIA, None)).is_absolute())
+
+    def test_paths_are_absolute_unless_asked_for(self):
+        """Shotcut writes absolute paths and has not been shown to read
+        relative ones, so portability is opt-in until it has."""
+        from project.compile_mlt import compile_file
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            root.mkdir()
+            (root / "media").mkdir()
+            shutil.copy(SECOND_MEDIA, root / "media" / "clip.mp4")
+            ir = {"schema_version": "0.2.0",
+                  "project": {"name": "p", "width": 1920, "height": 1080, "fps": 30,
+                              "source_frame_rate_mode": "cfr"},
+                  "tracks": [{"id": "V1", "type": "video", "clips": [
+                      {"id": "clip1", "source": (root / "media" / "clip.mp4").as_posix(),
+                       "source_in": 0.0, "source_out": 3.0,
+                       "timeline_start": 0.0, "timeline_duration": 3.0}]}]}
+            ir_path = root / "p.ir.json"
+            ir_path.write_text(json.dumps(ir), encoding="utf-8")
+            text = compile_file(ir_path, root / "p.mlt").read_text(encoding="utf-8")
+        self.assertIn("media/clip.mp4</property>", text)
+        self.assertNotIn(">media/clip.mp4<", text)          # not the relative form
+
+    def test_project_folder_property_matches_the_path_style(self):
+        """Shotcut gates path handling on this; it must agree with what we wrote."""
+        from project.compile_mlt import compile_file
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "proj"
+            absolute = self._project(root).read_text(encoding="utf-8")
+        self.assertIn('<property name="shotcut:projectFolder">1</property>', absolute)
+
+    def test_default_compile_declares_absolute_paths_to_shotcut(self):
+        from project.compile_mlt import compile_file
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = Path(tmp) / "p.ir.json"
+            ir = json.loads(EXAMPLE_IR.read_text(encoding="utf-8"))
+            ir_path.write_text(json.dumps(ir), encoding="utf-8")
+            if not NORMALIZED_MEDIA.exists():
+                self.skipTest("media not present")
+            text = compile_file(ir_path, Path(tmp) / "p.mlt").read_text(encoding="utf-8")
+        self.assertIn('<property name="shotcut:projectFolder">0</property>', text)
 
 
 if __name__ == "__main__":

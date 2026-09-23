@@ -181,7 +181,12 @@ def _fill_playlist(playlist: ET.Element, track: dict, fps: float,
 
 
 def build_mlt(ir: dict, project_dir: Path | None = None) -> ET.Element:
-    """Compile the IR. With project_dir, sources are referenced relative to it."""
+    """Compile the IR. With project_dir, sources are referenced relative to it.
+
+    Relative resources are correct for the MLT engine but NOT known to be
+    correct for Shotcut, which writes absolute paths and gates path handling on
+    shotcut:projectFolder. compile_file therefore leaves this off by default.
+    """
     validate(ir, "ir")
 
     project = ir["project"]
@@ -212,13 +217,22 @@ def build_mlt(ir: dict, project_dir: Path | None = None) -> ET.Element:
     # Span the longest track, not the first: an upper layer that outlasts the
     # one below it would otherwise run past the end of the project.
     add_background(mlt, total_frames)
-    add_tractor(mlt, total_frames, playlist_ids, project["source_frame_rate_mode"])
+    add_tractor(mlt, total_frames, playlist_ids, project["source_frame_rate_mode"],
+                project_folder=project_dir is not None)
     return mlt
 
 
-def compile_file(ir_path: Path | str, output_path: Path | str) -> Path:
+def compile_file(ir_path: Path | str, output_path: Path | str,
+                 relative_paths: bool = False) -> Path:
+    """Compile an IR file to an .mlt.
+
+    relative_paths makes the project portable - the folder can be moved or
+    renamed - but is off by default because Shotcut has not been shown to read
+    such a project. The MLT engine does; see the round-trip and move tests.
+    """
     ir = json.loads(Path(ir_path).read_text(encoding="utf-8"))
-    tree = ET.ElementTree(build_mlt(ir, project_dir=Path(output_path).resolve().parent))
+    project_dir = Path(output_path).resolve().parent if relative_paths else None
+    tree = ET.ElementTree(build_mlt(ir, project_dir=project_dir))
     ET.indent(tree, space="  ")
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
     # Shotcut strips our custom properties when it rewrites the project, so
