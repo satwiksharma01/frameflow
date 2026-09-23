@@ -57,18 +57,102 @@ def sec_to_frames(seconds: float, fps: float) -> int:
     return round(seconds * fps)
 
 
-def _single_video_track(ir: dict) -> dict:
+def _compilable_tracks(ir: dict) -> list[dict]:
+    """Every track the compiler can emit, in IR order - which is bottom to top.
+
+    Two kinds are refused rather than guessed at. An audio track needs
+    Shotcut's shotcut:audio convention and no video blend, and unlike the rest
+    of this scaffolding that convention has never been checked against a
+    project Shotcut actually wrote. A clip with no source is a caption or a
+    generated visual, which needs a producer this compiler cannot build.
+    """
     tracks = ir["tracks"]
-    if len(tracks) != 1 or tracks[0]["type"] != "video":
+
+    audio = [t["id"] for t in tracks if t["type"] == "audio"]
+    if audio:
         raise NotImplementedError(
-            "the compiler currently supports exactly one track, of type 'video'. "
-            "The schema models broll/graphics/captions/audio tracks, but compiling "
-            "them needs multi-track compositing that is not built yet."
+            f"audio tracks are not compiled yet: {', '.join(audio)}. Shotcut marks one "
+            "with shotcut:audio and gives it no video transition, but that convention "
+            "has not been verified against a project Shotcut wrote, and this module "
+            "does not guess at conventions - see shotcut_template's docstring."
         )
-    track = tracks[0]
-    if not track["clips"]:
-        raise ValueError("video track has no clips - nothing to compile")
-    return track
+
+    sourceless = [c["id"] for t in tracks for c in t["clips"] if "source" not in c]
+    if sourceless:
+        raise NotImplementedError(
+            f"clips with no source media are not compiled yet: {', '.join(sourceless)}. "
+            "Captions and generated graphics need a producer this compiler cannot build."
+        )
+
+    if not any(t["clips"] for t in tracks):
+        raise ValueError("no track has any clips - nothing to compile")
+    return tracks
+
+
+def _add_producers(mlt: ET.Element, tracks: list[dict],
+                   fps: float) -> tuple[dict[str, str], dict[str, int]]:
+    """One producer per distinct source, shared by every track that uses it.
+
+    Sharing matters: B-roll cut from the same file as the main track, or the
+    same clip reused twice, must not probe or declare that file twice.
+    """
+    ordered: list[str] = []
+    for track in tracks:
+        for clip in track["clips"]:
+            if clip["source"] not in ordered:
+                ordered.append(clip["source"])
+
+    producer_ids, source_frames = {}, {}
+    for index, source in enumerate(ordered):
+        path = Path(source)
+        frames = sec_to_frames(analyze(path).duration_seconds, fps)
+        producer_id = f"producer{index}"
+        producer_ids[source], source_frames[source] = producer_id, frames
+
+        producer = ET.SubElement(
+            mlt, "producer", {"id": producer_id, "in": "0", "out": str(frames - 1)}
+        )
+        ET.SubElement(producer, "property", {"name": "resource"}).text = path.resolve().as_posix()
+        ET.SubElement(producer, "property", {"name": "mlt_service"}).text = "avformat"
+        ET.SubElement(producer, "property", {"name": "length"}).text = str(frames)
+    return producer_ids, source_frames
+
+
+def _fill_playlist(playlist: ET.Element, track: dict, fps: float,
+                   producer_ids: dict[str, str], source_frames: dict[str, int]) -> int:
+    """Write the track's clips and the gaps between them; return where it ends."""
+    cursor = 0
+    for clip in sorted(track["clips"], key=lambda c: c["timeline_start"]):
+        start_f = sec_to_frames(clip["timeline_start"], fps)
+        if start_f > cursor:
+            ET.SubElement(playlist, "blank", {"length": str(start_f - cursor)})
+            cursor = start_f
+
+        frames = source_frames[clip["source"]]
+        in_f = sec_to_frames(clip.get("source_in", 0.0), fps)
+        # Derive the out point from the timeline length rather than rounding
+        # source_out independently, so the entry can never be a frame longer
+        # or shorter than the slot it occupies.
+        length_f = sec_to_frames(clip["timeline_duration"], fps)
+        out_f = in_f + length_f - 1
+        if length_f <= 0:
+            raise ValueError(f"clip {clip['id']!r} rounds to zero frames at {fps} fps")
+        if out_f == frames:
+            # Rounding in and length separately can land one frame past the
+            # end for a clip that runs to the end of the source - which most
+            # first cuts do. One frame is rounding, not an authoring error.
+            out_f -= 1
+            length_f -= 1
+        if out_f > frames - 1:
+            raise ValueError(
+                f"clip {clip['id']!r} ends at source frame {out_f}, beyond the "
+                f"{frames} frames of {clip['source']}"
+            )
+        ET.SubElement(playlist, "entry", {
+            "producer": producer_ids[clip["source"]], "in": str(in_f), "out": str(out_f),
+        })
+        cursor += length_f
+    return cursor
 
 
 def build_mlt(ir: dict) -> ET.Element:
@@ -81,64 +165,28 @@ def build_mlt(ir: dict) -> ET.Element:
     g = math.gcd(width, height)
     dar_num, dar_den = width // g, height // g
 
-    track = _single_video_track(ir)
-    clips = sorted(track["clips"], key=lambda c: c["timeline_start"])
-
-    sources = {c["source"] for c in clips}
-    if len(sources) != 1:
-        raise NotImplementedError("the compiler currently supports exactly one source file")
-    source_path = Path(sources.pop())
-    source_frames = sec_to_frames(analyze(source_path).duration_seconds, fps)
-
+    tracks = _compilable_tracks(ir)
     mlt = build_root(width, height, num, den, dar_num, dar_den)
+    producer_ids, source_frames = _add_producers(mlt, tracks, fps)
 
-    producer = ET.SubElement(
-        mlt, "producer", {"id": "producer0", "in": "0", "out": str(source_frames - 1)}
-    )
-    ET.SubElement(producer, "property", {"name": "resource"}).text = source_path.resolve().as_posix()
-    ET.SubElement(producer, "property", {"name": "mlt_service"}).text = "avformat"
-    ET.SubElement(producer, "property", {"name": "length"}).text = str(source_frames)
+    playlist_ids, total_frames = [], 0
+    for index, track in enumerate(tracks):
+        playlist_id = f"playlist{index}"
+        playlist = ET.SubElement(mlt, "playlist", {"id": playlist_id})
+        ET.SubElement(playlist, "property", {"name": "shotcut:video"}).text = "1"
+        ET.SubElement(playlist, "property", {"name": "shotcut:name"}).text = track["id"]
+        # MLT has no concept of our track semantics (video vs broll vs graphics),
+        # so carry it as a custom property rather than losing it on round-trip.
+        ET.SubElement(playlist, "property", {"name": TRACK_TYPE_PROPERTY}).text = track["type"]
+        total_frames = max(
+            total_frames, _fill_playlist(playlist, track, fps, producer_ids, source_frames)
+        )
+        playlist_ids.append(playlist_id)
 
-    playlist = ET.SubElement(mlt, "playlist", {"id": "playlist0"})
-    ET.SubElement(playlist, "property", {"name": "shotcut:video"}).text = "1"
-    ET.SubElement(playlist, "property", {"name": "shotcut:name"}).text = track["id"]
-    # MLT has no concept of our track semantics (video vs broll vs graphics),
-    # so carry it as a custom property rather than losing it on round-trip.
-    ET.SubElement(playlist, "property", {"name": TRACK_TYPE_PROPERTY}).text = track["type"]
-
-    cursor = 0
-    for clip in clips:
-        start_f = sec_to_frames(clip["timeline_start"], fps)
-        if start_f > cursor:
-            ET.SubElement(playlist, "blank", {"length": str(start_f - cursor)})
-            cursor = start_f
-
-        in_f = sec_to_frames(clip["source_in"], fps)
-        # Derive the out point from the timeline length rather than rounding
-        # source_out independently, so the entry can never be a frame longer
-        # or shorter than the slot it occupies.
-        length_f = sec_to_frames(clip["timeline_duration"], fps)
-        out_f = in_f + length_f - 1
-        if length_f <= 0:
-            raise ValueError(f"clip {clip['id']!r} rounds to zero frames at {fps} fps")
-        if out_f == source_frames:
-            # Rounding in and length separately can land one frame past the
-            # end for a clip that runs to the end of the source - which most
-            # first cuts do. One frame is rounding, not an authoring error.
-            out_f -= 1
-            length_f -= 1
-        if out_f > source_frames - 1:
-            raise ValueError(
-                f"clip {clip['id']!r} ends at source frame {out_f}, beyond the source's "
-                f"{source_frames} frames"
-            )
-        ET.SubElement(playlist, "entry", {
-            "producer": "producer0", "in": str(in_f), "out": str(out_f),
-        })
-        cursor += length_f
-
-    add_background(mlt, cursor)
-    add_tractor(mlt, cursor, ["playlist0"], project["source_frame_rate_mode"])
+    # Span the longest track, not the first: an upper layer that outlasts the
+    # one below it would otherwise run past the end of the project.
+    add_background(mlt, total_frames)
+    add_tractor(mlt, total_frames, playlist_ids, project["source_frame_rate_mode"])
     return mlt
 
 
