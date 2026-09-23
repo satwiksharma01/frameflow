@@ -122,6 +122,46 @@ class TestIRSemantics(unittest.TestCase):
         validate(ir, "ir")
 
 
+class TestIRVersion(unittest.TestCase):
+    """Door 2. A project on disk outlives the build that wrote it."""
+
+    def test_the_current_version_passes(self):
+        validate(VALID_IR, "ir")
+
+    def test_an_older_project_says_so_and_what_to_do(self):
+        ir = copy.deepcopy(VALID_IR)
+        ir["schema_version"] = "0.1.0"
+        with self.assertRaises(ValidationError) as cm:
+            validate(ir, "ir")
+        message = str(cm.exception)
+        self.assertIn("0.1.0", message)
+        self.assertIn("0.2.0", message)
+        self.assertIn("Rebuild", message)
+
+    def test_a_newer_project_says_to_update_frameflow(self):
+        ir = copy.deepcopy(VALID_IR)
+        ir["schema_version"] = "0.3.0"
+        with self.assertRaises(ValidationError) as cm:
+            validate(ir, "ir")
+        self.assertIn("newer", str(cm.exception))
+        self.assertIn("Update Frameflow", str(cm.exception))
+
+    def test_a_version_that_is_not_a_number_is_reported_plainly(self):
+        ir = copy.deepcopy(VALID_IR)
+        ir["schema_version"] = "banana"
+        with self.assertRaises(ValidationError) as cm:
+            validate(ir, "ir")
+        self.assertIn("not a version number", str(cm.exception))
+
+    def test_a_missing_version_is_still_a_schema_error(self):
+        """Absence is the schema's job to report, not the version check's."""
+        ir = copy.deepcopy(VALID_IR)
+        del ir["schema_version"]
+        with self.assertRaises(ValidationError) as cm:
+            validate(ir, "ir")
+        self.assertIn("schema_version", str(cm.exception))
+
+
 class TestEditPlanSchema(unittest.TestCase):
     def test_valid_edit_plan_passes(self):
         validate(VALID_EDIT_PLAN, "edit_plan")

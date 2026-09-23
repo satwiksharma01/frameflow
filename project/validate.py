@@ -27,6 +27,12 @@ SCHEMA_FILES = {
 # error, but tolerant of float representation noise.
 _EPSILON = 1e-4
 
+# The IR version this build reads and writes. ir.schema.json pins the same
+# value, so a document at any other version describes fields that may not mean
+# what this validator thinks they mean - which is why it is refused rather
+# than coerced.
+IR_SCHEMA_VERSION = "0.2.0"
+
 
 class ValidationError(Exception):
     pass
@@ -36,6 +42,41 @@ def load_schema(kind: str) -> dict:
     if kind not in SCHEMA_FILES:
         raise ValueError(f"unknown document kind {kind!r}; expected one of {sorted(SCHEMA_FILES)}")
     return json.loads((SCHEMA_DIR / SCHEMA_FILES[kind]).read_text(encoding="utf-8"))
+
+
+def _check_ir_version(ir: dict) -> None:
+    """Explain a version mismatch, instead of leaving jsonschema to say "const".
+
+    A project on disk outlives the build that wrote it, so the failure worth
+    designing for is opening an old project with a new Frameflow, or the
+    reverse. Those need opposite advice, so they get separate messages.
+
+    When a second version exists, the upgrade from 0.2.0 belongs here: migrate
+    the document and let validation continue on the result. There is nothing to
+    migrate to yet, so today this only reports.
+    """
+    found = ir.get("schema_version")
+    if found is None or found == IR_SCHEMA_VERSION:
+        return                      # absent is the schema's problem, not ours
+
+    try:
+        as_numbers = tuple(int(part) for part in str(found).split("."))
+        mine = tuple(int(part) for part in IR_SCHEMA_VERSION.split("."))
+    except ValueError:
+        raise ValidationError(
+            f"schema_version {found!r} is not a version number; this build reads "
+            f"IR {IR_SCHEMA_VERSION}"
+        ) from None
+
+    if as_numbers < mine:
+        raise ValidationError(
+            f"this project is IR {found}; this build reads {IR_SCHEMA_VERSION}, and no "
+            f"upgrade from {found} exists yet. Rebuild the project from its edit plan."
+        )
+    raise ValidationError(
+        f"this project is IR {found}, newer than the {IR_SCHEMA_VERSION} this build "
+        f"reads. Update Frameflow rather than editing the project by hand."
+    )
 
 
 def _check_schema(document: dict, kind: str) -> None:
@@ -133,6 +174,8 @@ def _check_edit_plan_semantics(plan: dict) -> None:
 
 def validate(document: dict, kind: str) -> None:
     """Raise ValidationError if the document is invalid."""
+    if kind == "ir":
+        _check_ir_version(document)
     _check_schema(document, kind)
     if kind == "ir":
         _check_ir_semantics(document)

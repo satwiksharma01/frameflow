@@ -64,8 +64,14 @@ def _seconds(frames: int, fps: float) -> float:
     return round(frames / fps, _PRECISION)
 
 
-def _media_elements(mlt: ET.Element) -> dict[str, dict]:
-    """Every <producer>/<chain> that refers to real media, keyed by id."""
+def _media_elements(mlt: ET.Element, project_dir: Path | None = None) -> dict[str, dict]:
+    """Every <producer>/<chain> that refers to real media, keyed by id.
+
+    A relative resource is resolved against the directory holding the .mlt,
+    which is where MLT itself resolves it. The IR carries absolute paths, so
+    resolving here is what keeps a portable project usable once it is read
+    back from anywhere other than its own folder.
+    """
     media = {}
     for tag in ("producer", "chain"):
         for element in mlt.findall(tag):
@@ -73,10 +79,14 @@ def _media_elements(mlt: ET.Element) -> dict[str, dict]:
             if not element_id:
                 continue
             props = _properties(element)
-            media[element_id] = {
-                "resource": props.get("resource", ""),
-                "service": props.get("mlt_service", ""),
-            }
+            resource = props.get("resource", "")
+            service = props.get("mlt_service", "")
+            # "resource" on a colour producer is a colour, not a path.
+            if resource and service != "color" and project_dir is not None:
+                candidate = Path(resource)
+                if not candidate.is_absolute():
+                    resource = (Path(project_dir) / candidate).resolve().as_posix()
+            media[element_id] = {"resource": resource, "service": service}
     return media
 
 
@@ -155,7 +165,7 @@ def parse_mlt(path: Path | str, use_sidecar: bool = True) -> dict:
         raise ParseError("no <tractor> element; this is not a timeline project")
     tractor = tractors[-1]
 
-    media = _media_elements(root)
+    media = _media_elements(root, Path(path).resolve().parent)
     playlists = {p.get("id"): p for p in root.findall("playlist") if p.get("id")}
 
     tracks = []

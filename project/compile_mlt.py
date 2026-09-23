@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import math
+import os
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
@@ -89,8 +90,31 @@ def _compilable_tracks(ir: dict) -> list[dict]:
     return tracks
 
 
-def _add_producers(mlt: ET.Element, tracks: list[dict],
-                   fps: float) -> tuple[dict[str, str], dict[str, int]]:
+def resource_path(source: str | Path, project_dir: Path | None) -> str:
+    """How the .mlt should refer to a source file.
+
+    MLT resolves a relative resource against the directory holding the .mlt,
+    not the working directory - verified against the engine with a broken-path
+    control, since melt exits 0 either way. So a relative reference keeps
+    working when the whole tree is moved or renamed, which an absolute one
+    does not ("projects break when files move" is a real editing pain point).
+
+    Sources on another drive cannot be expressed relatively at all, and those
+    stay absolute. Shotcut writes absolute paths in its own saves, so a human
+    save may well convert these back; that costs nothing we had before.
+    """
+    absolute = Path(source).resolve()
+    if project_dir is None:
+        return absolute.as_posix()
+    try:
+        relative = os.path.relpath(absolute, Path(project_dir).resolve())
+    except ValueError:      # different drive on Windows
+        return absolute.as_posix()
+    return Path(relative).as_posix()
+
+
+def _add_producers(mlt: ET.Element, tracks: list[dict], fps: float,
+                   project_dir: Path | None) -> tuple[dict[str, str], dict[str, int]]:
     """One producer per distinct source, shared by every track that uses it.
 
     Sharing matters: B-roll cut from the same file as the main track, or the
@@ -112,7 +136,8 @@ def _add_producers(mlt: ET.Element, tracks: list[dict],
         producer = ET.SubElement(
             mlt, "producer", {"id": producer_id, "in": "0", "out": str(frames - 1)}
         )
-        ET.SubElement(producer, "property", {"name": "resource"}).text = path.resolve().as_posix()
+        ET.SubElement(producer, "property", {"name": "resource"}).text = resource_path(
+            path, project_dir)
         ET.SubElement(producer, "property", {"name": "mlt_service"}).text = "avformat"
         ET.SubElement(producer, "property", {"name": "length"}).text = str(frames)
     return producer_ids, source_frames
@@ -155,7 +180,8 @@ def _fill_playlist(playlist: ET.Element, track: dict, fps: float,
     return cursor
 
 
-def build_mlt(ir: dict) -> ET.Element:
+def build_mlt(ir: dict, project_dir: Path | None = None) -> ET.Element:
+    """Compile the IR. With project_dir, sources are referenced relative to it."""
     validate(ir, "ir")
 
     project = ir["project"]
@@ -167,7 +193,7 @@ def build_mlt(ir: dict) -> ET.Element:
 
     tracks = _compilable_tracks(ir)
     mlt = build_root(width, height, num, den, dar_num, dar_den)
-    producer_ids, source_frames = _add_producers(mlt, tracks, fps)
+    producer_ids, source_frames = _add_producers(mlt, tracks, fps, project_dir)
 
     playlist_ids, total_frames = [], 0
     for index, track in enumerate(tracks):
@@ -192,7 +218,7 @@ def build_mlt(ir: dict) -> ET.Element:
 
 def compile_file(ir_path: Path | str, output_path: Path | str) -> Path:
     ir = json.loads(Path(ir_path).read_text(encoding="utf-8"))
-    tree = ET.ElementTree(build_mlt(ir))
+    tree = ET.ElementTree(build_mlt(ir, project_dir=Path(output_path).resolve().parent))
     ET.indent(tree, space="  ")
     tree.write(output_path, encoding="utf-8", xml_declaration=True)
     # Shotcut strips our custom properties when it rewrites the project, so

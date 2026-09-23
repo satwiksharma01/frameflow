@@ -8,6 +8,7 @@ the format cannot deliver.
 Run with: python -m unittest discover tests
 """
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -327,6 +328,75 @@ class TestCompilerRefusals(unittest.TestCase):
         from project.compile_mlt import build_mlt
         with self.assertRaises(ValueError):
             build_mlt(self._ir([{"id": "V1", "type": "video", "clips": []}]))
+
+
+class TestPortableProjects(unittest.TestCase):
+    """Door 3. "Projects break when files move" is a listed editing pain point;
+    MLT resolves a relative resource against the .mlt's own directory, so a
+    self-contained folder can survive being moved."""
+
+    def _project(self, root: Path) -> Path:
+        """A one-clip project with its media inside the project folder."""
+        from project.compile_mlt import compile_file
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "media").mkdir(exist_ok=True)
+        shutil.copy(SECOND_MEDIA, root / "media" / "clip.mp4")
+        ir = {"schema_version": "0.2.0",
+              "project": {"name": "portable", "width": 1920, "height": 1080, "fps": 30,
+                          "source_frame_rate_mode": "cfr"},
+              "tracks": [{"id": "V1", "type": "video", "clips": [
+                  {"id": "clip1", "source": (root / "media" / "clip.mp4").as_posix(),
+                   "source_in": 0.0, "source_out": 3.0,
+                   "timeline_start": 0.0, "timeline_duration": 3.0}]}]}
+        ir_path = root / "p.ir.json"
+        ir_path.write_text(json.dumps(ir), encoding="utf-8")
+        return compile_file(ir_path, root / "p.mlt")
+
+    def setUp(self):
+        if not SECOND_MEDIA.exists():
+            self.skipTest("media not present")
+
+    def test_media_inside_the_project_is_referenced_relatively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mlt = self._project(Path(tmp) / "proj")
+            text = mlt.read_text(encoding="utf-8")
+        self.assertIn("<property name=\"resource\">media/clip.mp4</property>", text)
+        self.assertNotIn(tmp.replace("\\", "/"), text)
+
+    def test_a_moved_project_still_finds_its_media(self):
+        """The whole point: rename the folder and the project still resolves."""
+        with tempfile.TemporaryDirectory() as tmp:
+            original = Path(tmp) / "before"
+            self._project(original)
+            moved = Path(tmp) / "after renaming"
+            original.rename(moved)
+
+            parsed = parse_mlt(moved / "p.mlt")
+            source = Path(parsed["tracks"][0]["clips"][0]["source"])
+            self.assertTrue(source.exists(), f"{source} should exist after the move")
+            self.assertEqual(source.parent.parent.name, "after renaming")
+
+    def test_the_parser_hands_back_an_absolute_path(self):
+        """The IR carries absolute paths; only the .mlt is relative."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mlt = self._project(Path(tmp) / "proj")
+            parsed = parse_mlt(mlt)
+        self.assertTrue(Path(parsed["tracks"][0]["clips"][0]["source"]).is_absolute())
+
+    def test_a_source_that_cannot_be_made_relative_stays_absolute(self):
+        from project.compile_mlt import resource_path
+        with tempfile.TemporaryDirectory() as tmp:
+            here = Path(tmp)
+            other_drive = [f"{d}:/" for d in "CDEFGH"
+                           if Path(f"{d}:/").exists() and not here.as_posix().upper().startswith(d)]
+            if not other_drive:
+                self.skipTest("no second drive to test the cross-drive case")
+            written = resource_path(Path(other_drive[0]) / "somewhere" / "clip.mp4", here)
+        self.assertTrue(Path(written).is_absolute())
+
+    def test_no_project_dir_means_absolute(self):
+        from project.compile_mlt import resource_path
+        self.assertTrue(Path(resource_path(SECOND_MEDIA, None)).is_absolute())
 
 
 if __name__ == "__main__":
