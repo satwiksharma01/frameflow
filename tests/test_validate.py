@@ -138,6 +138,31 @@ class TestEditPlanSchema(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(plan, "edit_plan")
 
+    def test_confidence_is_optional(self):
+        """Absent means high, so every plan written before the field existed stays valid."""
+        self.assertNotIn("confidence", VALID_EDIT_PLAN["decisions"][0])
+        validate(VALID_EDIT_PLAN, "edit_plan")
+
+    def test_a_decision_can_be_marked_low_confidence(self):
+        plan = copy.deepcopy(VALID_EDIT_PLAN)
+        plan["decisions"][0]["confidence"] = "low"
+        validate(plan, "edit_plan")
+
+    def test_an_uncertain_removal_is_expressible(self):
+        """The case a third `uncertain` action could not represent: a cut the
+        editor doubted. It is the one the creator most needs flagged, because
+        the material is gone from the timeline and cannot be noticed."""
+        plan = copy.deepcopy(VALID_EDIT_PLAN)
+        removal = next(d for d in plan["decisions"] if d["action"] == "remove")
+        removal["confidence"] = "low"
+        validate(plan, "edit_plan")
+
+    def test_invalid_confidence_fails(self):
+        plan = copy.deepcopy(VALID_EDIT_PLAN)
+        plan["decisions"][0]["confidence"] = "maybe"
+        with self.assertRaises(ValidationError):
+            validate(plan, "edit_plan")
+
 
 class TestTranscriptSchema(unittest.TestCase):
     def test_extra_whisper_fields_are_allowed(self):

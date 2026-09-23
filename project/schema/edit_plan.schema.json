@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://frameflow.local/schema/edit_plan.schema.json",
   "title": "FrameflowEditPlan",
-  "description": "Claude's keep/remove decisions over a transcript. `reason` is required on every decision: the whitepaper's first-cut philosophy requires uncertain creative choices to stay visible to the creator, which is impossible if cuts arrive unexplained.",
+  "description": "Claude's keep/remove decisions over a transcript. `reason` is required on every decision: the whitepaper's first-cut philosophy requires uncertain creative choices to stay visible to the creator, which is impossible if cuts arrive unexplained. `confidence` makes that visibility machine-readable, so a review UI can filter for the decisions worth checking rather than parsing prose.",
   "type": "object",
   "required": ["source_duration_seconds", "decisions"],
   "additionalProperties": false,
@@ -23,7 +23,12 @@
           "action": { "type": "string", "enum": ["keep", "remove"] },
           "start": { "type": "number", "minimum": 0 },
           "end": { "type": "number", "exclusiveMinimum": 0 },
-          "reason": { "type": "string", "minLength": 1 }
+          "reason": { "type": "string", "minLength": 1 },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "low"],
+            "description": "Optional; absent means high. Mark a decision \"low\" when you are not sure it is right, and say why in `reason`. Applies to removals as well as keeps - an uncertain cut is the one the creator most needs to check, because the material is no longer on the timeline to notice. Deliberately not a third action: `action` stays keep/remove so that code which branches on it cannot silently drop uncertain material."
+          }
         }
       }
     }

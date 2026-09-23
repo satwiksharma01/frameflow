@@ -157,6 +157,13 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True) -> Path:
                 print(f"    ! boundary at {note.planned:.2f}s: {note.detail}")
         _write_json(out_dir / PLAN_FILE, plan)
 
+    # After snapping, so the timestamps match where the cuts actually land.
+    unsure = [d for d in plan["decisions"] if d.get("confidence") == "low"]
+    if unsure:
+        print(f"    {len(unsure)} decision(s) the editor was unsure about:")
+        for d in unsure:
+            print(f"    ? {d['action']} {d['start']:.2f}-{d['end']:.2f}s: {d['reason']}")
+
     _step("Building the project")
     ir = edit_plan_to_ir(
         # The declared rate is the exact one (e.g. 30000/1001, not a rounded
