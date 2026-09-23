@@ -78,7 +78,7 @@ def add_background(mlt: ET.Element, total_frames: int) -> None:
 
 
 def add_tractor(mlt: ET.Element, total_frames: int, content_playlist_ids: list[str],
-                source_frame_rate_mode: str) -> ET.Element:
+                source_frame_rate_mode: str, project_folder: bool = False) -> ET.Element:
     """The tractor wiring the background and content tracks together.
 
     Each content track gets a `mix` (audio) and `qtblend` (video) transition
@@ -92,6 +92,10 @@ def add_tractor(mlt: ET.Element, total_frames: int, content_playlist_ids: list[s
     })
     _prop(tractor, "shotcut", "1")
     _prop(tractor, "shotcut:projectAudioChannels", "2")
+    # Shotcut writes this in every project it saves, and it governs how it
+    # reads media paths: 0 means absolute. Emitting relative resources without
+    # it left Shotcut no reason to treat them as project-relative.
+    _prop(tractor, "shotcut:projectFolder", "1" if project_folder else "0")
     _prop(tractor, PROVENANCE_PROPERTY, source_frame_rate_mode)
 
     ET.SubElement(tractor, "track", {"producer": BACKGROUND_PLAYLIST_ID})
