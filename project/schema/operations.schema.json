@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/operations.schema.json",
+  "title": "FrameflowOperations",
+  "description": "Changes to a project the creator already has, as opposed to a first cut's full plan. Every operation addresses a span of the recording in source seconds, read from the transcript; code works out which clips that trims, splits, deletes or extends, so no operation ever names a clip.",
+  "type": "object",
+  "required": ["operations"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One or two sentences for the creator: what these operations do to their cut, and why."
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action", "start", "end", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["remove", "restore"],
+            "description": "remove: take this span of the recording out of the cut. restore: put this span of the recording back into the cut, in recording order."
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File name of the recording the span comes from. Optional when the main track uses a single recording."
+          },
+          "start": { "type": "number", "minimum": 0, "description": "Seconds into the recording." },
+          "end": { "type": "number", "exclusiveMinimum": 0, "description": "Seconds into the recording." },
+          "reason": { "type": "string", "minLength": 1 },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "low"],
+            "description": "Optional; absent means high. \"low\" when you are not sure this is what the creator meant."
+          },
+          "override_human_edit": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Set ONLY when the instruction explicitly asks to undo something the creator changed in the editor since Frameflow last wrote - restoring material they removed, or removing material they put back. Quote or paraphrase the part of the instruction that asks for it. Without this, such an operation is rejected: the creator's own edits win."
+          }
+        }
+      }
+    }
+  }
+}

@@ -70,6 +70,22 @@ def _target_in_pause(pause: dict, before: str, after: str) -> float:
     return (pause["start"] + pause["end"]) / 2
 
 
+def place_in_pause(pause: dict, before: str, after: str, fps: float) -> float:
+    """The frame-aligned point in `pause` for a cut between `before` and `after`."""
+    frame = 1.0 / fps
+    target = _target_in_pause(pause, before, after)
+    # Stay at least a frame inside the pause: a boundary loses up to a frame
+    # of audio, and the frames either side carry the neighbouring words.
+    low, high = pause["start"] + frame, pause["end"] - frame
+    return frame_align(min(max(target, low), high) if low <= high
+                       else (pause["start"] + pause["end"]) / 2, fps)
+
+
+def is_tight(pause: dict, fps: float) -> bool:
+    """Under three frames: after losing up to a frame at each side, no safe cut point is left."""
+    return pause["end"] - pause["start"] < 3 * (1.0 / fps)
+
+
 def snap_plan(plan: dict, pauses: list[dict], fps: float,
               window: float = SEARCH_WINDOW_SECONDS) -> tuple[dict, list[SnapNote]]:
     """Return a copy of the plan with every internal boundary snapped, plus notes."""
@@ -88,12 +104,7 @@ def snap_plan(plan: dict, pauses: list[dict], fps: float,
             continue
 
         length = pause["end"] - pause["start"]
-        target = _target_in_pause(pause, decisions[i]["action"], decisions[i + 1]["action"])
-        # Stay at least a frame inside the pause: a boundary loses up to a frame
-        # of audio, and the frames either side carry the neighbouring words.
-        low, high = pause["start"] + frame, pause["end"] - frame
-        final = frame_align(min(max(target, low), high) if low <= high
-                            else (pause["start"] + pause["end"]) / 2, fps)
+        final = place_in_pause(pause, decisions[i]["action"], decisions[i + 1]["action"], fps)
 
         floor = decisions[i]["start"] + frame
         ceiling = decisions[i + 1]["end"] - frame
@@ -105,7 +116,7 @@ def snap_plan(plan: dict, pauses: list[dict], fps: float,
         decisions[i]["end"] = final
         decisions[i + 1]["start"] = final
 
-        if length < 3 * frame:
+        if is_tight(pause, fps):
             notes.append(SnapNote(i, planned, final, "tight",
                                   f"pause is only {length * 1000:.0f}ms - under three frames at "
                                   f"{fps:g}fps, so after losing up to a frame at each side there "
