@@ -199,6 +199,87 @@ def parse_mlt(path: Path | str, use_sidecar: bool = True) -> dict:
     return ir
 
 
+# What parse_mlt reads and compile_mlt writes back. Anything else in a project
+# would be silently dropped by an edit that regenerates the file.
+_MEDIA_SERVICES = {"avformat", "avformat-novalidate"}
+_TRACK_TRANSITIONS = {"mix", "qtblend"}
+
+
+def unsupported_content(path: Path | str) -> list[str]:
+    """Everything in the project that parsing and recompiling would lose.
+
+    An allowlist, not a denylist: Shotcut can put a great many things in a
+    project - filters, fades, titles, speed changes, crossfades, muted tracks -
+    and the failure worth preventing is discarding one of them silently. Each
+    item is a sentence a creator can act on.
+    """
+    root = ET.parse(path).getroot()
+    parent = {child: element for element in root.iter() for child in element}
+    playlists = {p.get("id"): p for p in root.findall("playlist") if p.get("id")}
+    media = {e.get("id"): _properties(e) for tag in ("producer", "chain")
+             for e in root.findall(tag) if e.get("id")}
+    tractors = root.findall("tractor")
+    found: list[str] = []
+
+    def track_name(playlist_id: str) -> str:
+        return _properties(playlists[playlist_id]).get("shotcut:name") or playlist_id
+
+    content: list[str] = []
+    if tractors:
+        for track in tractors[-1].findall("track"):
+            playlist_id = track.get("producer", "")
+            playlist = playlists.get(playlist_id)
+            if playlist is None or _is_background(playlist, playlist_id, media):
+                continue
+            content.append(playlist_id)
+            if track.get("hide"):
+                found.append(f"track {track_name(playlist_id)} is hidden or muted "
+                             f"(hide=\"{track.get('hide')}\")")
+            if _properties(playlist).get("shotcut:audio") == "1":
+                found.append(f"audio track {track_name(playlist_id)}")
+
+    def where(producer_id: str) -> str:
+        for playlist_id in content:
+            entries = playlists[playlist_id].findall("entry")
+            for n, entry in enumerate(entries, start=1):
+                if entry.get("producer") == producer_id:
+                    return f"clip {n} on {track_name(playlist_id)}"
+        return f"an item not on the timeline ({producer_id})"
+
+    for element in root.iter("filter"):
+        props = _properties(element)
+        name = props.get("shotcut:filter") or props.get("mlt_service") or "unnamed"
+        owner = parent.get(element)
+        if owner is not None and owner.tag in ("producer", "chain"):
+            found.append(f"the {name} filter on {where(owner.get('id', ''))}")
+        elif owner is not None and owner.tag == "playlist":
+            found.append(f"the {name} filter on track {track_name(owner.get('id', ''))}")
+        else:
+            found.append(f"the {name} filter on the whole project")
+
+    tractor_ids = {t.get("id") for t in tractors}
+    for playlist_id in content:
+        for n, entry in enumerate(playlists[playlist_id].findall("entry"), start=1):
+            producer_id = entry.get("producer", "")
+            if producer_id in tractor_ids:
+                found.append(f"a transition at clip {n} on {track_name(playlist_id)}")
+                continue
+            service = media.get(producer_id, {}).get("mlt_service", "")
+            if service not in _MEDIA_SERVICES:
+                found.append(f"a clip of type {service or 'unknown'}, clip {n} on {track_name(playlist_id)}")
+
+    if tractors:
+        for transition in tractors[-1].findall("transition"):
+            service = _properties(transition).get("mlt_service", "")
+            if service not in _TRACK_TRANSITIONS:
+                found.append(f"a transition of type {service or 'unknown'} between tracks")
+
+    main_bin = playlists.get("main_bin")
+    if main_bin is not None and main_bin.findall("entry"):
+        found.append(f"{len(main_bin.findall('entry'))} item(s) in Shotcut's playlist panel")
+    return found
+
+
 def quantize_ir(ir: dict) -> dict:
     """Express every time in whole frames, for round-trip comparison.
 

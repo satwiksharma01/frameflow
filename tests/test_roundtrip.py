@@ -476,5 +476,77 @@ class TestShotcutSavedMultiTrack(unittest.TestCase):
         self.assertEqual([t["type"] for t in self.ir["tracks"]], ["video", "broll"])
 
 
+class TestUnsupportedContent(unittest.TestCase):
+    """What an edit that regenerates the project would lose. Each case starts
+    from a project Shotcut really saved and adds one thing a creator might."""
+
+    def setUp(self):
+        if not SHOTCUT_SAVED_TWO_TRACK.exists():
+            self.skipTest("Shotcut-saved fixture not present")
+        import xml.etree.ElementTree as ET
+        self.ET = ET
+        self.tree = ET.parse(SHOTCUT_SAVED_TWO_TRACK)
+        self.root = self.tree.getroot()
+
+    def found(self):
+        from project.parse_mlt import unsupported_content
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "p.mlt"
+            self.tree.write(path, encoding="utf-8", xml_declaration=True)
+            return unsupported_content(path)
+
+    def _add_filter(self, owner, name):
+        f = self.ET.SubElement(owner, "filter", {"id": "filter0"})
+        self.ET.SubElement(f, "property", {"name": "mlt_service"}).text = "brightness"
+        self.ET.SubElement(f, "property", {"name": "shotcut:filter"}).text = name
+
+    def test_a_real_save_loses_nothing(self):
+        self.assertEqual(self.found(), [])
+
+    def test_a_filter_on_a_clip_is_named_with_its_clip(self):
+        playlist = self.root.find("playlist[@id='playlist0']")
+        producer = self.root.find(f"producer[@id='{playlist.find('entry').get('producer')}']")
+        self._add_filter(producer, "fadeInBrightness")
+        self.assertEqual(self.found(), ["the fadeInBrightness filter on clip 1 on V1"])
+
+    def test_a_filter_on_a_track(self):
+        self._add_filter(self.root.find("playlist[@id='playlist1']"), "brightness")
+        self.assertEqual(self.found(), ["the brightness filter on track V2"])
+
+    def test_a_filter_on_the_whole_project(self):
+        self._add_filter(self.root.find("tractor"), "audioGain")
+        self.assertEqual(self.found(), ["the audioGain filter on the whole project"])
+
+    def test_a_hidden_track(self):
+        self.root.find("tractor").findall("track")[2].set("hide", "video")
+        self.assertIn('track V2 is hidden or muted (hide="video")', self.found())
+
+    def test_a_title_or_image_clip(self):
+        playlist = self.root.find("playlist[@id='playlist1']")
+        producer = self.root.find(f"producer[@id='{playlist.find('entry').get('producer')}']")
+        for prop in producer.findall("property"):
+            if prop.get("name") == "mlt_service":
+                prop.text = "qtext"
+        self.assertEqual(self.found(), ["a clip of type qtext, clip 1 on V2"])
+
+    def test_a_crossfade_between_clips(self):
+        """Shotcut writes a crossfade as a tractor that a playlist entry points at."""
+        crossfade = self.ET.SubElement(self.root, "tractor", {"id": "tractor1"})
+        self.root.remove(crossfade)
+        self.root.insert(list(self.root).index(self.root.find("tractor")), crossfade)
+        self.root.find("playlist[@id='playlist0']").findall("entry")[1].set("producer", "tractor1")
+        self.assertEqual(self.found(), ["a transition at clip 2 on V1"])
+
+    def test_items_in_the_playlist_panel(self):
+        self.ET.SubElement(self.root.find("playlist[@id='main_bin']"), "entry",
+                           {"producer": "producer0", "in": "0", "out": "10"})
+        self.assertEqual(self.found(), ["1 item(s) in Shotcut's playlist panel"])
+
+    def test_several_things_are_all_reported(self):
+        self.root.find("tractor").findall("track")[1].set("hide", "audio")
+        self._add_filter(self.root.find("tractor"), "audioGain")
+        self.assertEqual(len(self.found()), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
