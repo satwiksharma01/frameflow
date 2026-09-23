@@ -169,10 +169,11 @@ class HumanChanges:
     def any(self) -> bool:
         return bool(self.removed or self.restored or self.clips or self.other_tracks)
 
-    def overlapping(self, which: str, source: str, start: float, end: float) -> list[Seconds]:
-        """Spans of `which` ("removed" or "restored") that [start, end) touches."""
+    def overlapping(self, which: str, source: str, start: float, end: float,
+                    at_least: float = 1e-6) -> list[Seconds]:
+        """Spans of `which` ("removed" or "restored") that [start, end) overlaps by more than `at_least`."""
         spans = getattr(self, which).get(source_key(source), [])
-        return [(s, e) for s, e in spans if min(e, end) - max(s, start) > 1e-6]
+        return [(s, e) for s, e in spans if min(e, end) - max(s, start) > at_least]
 
     def lines(self) -> list[str]:
         if not self.known:
