@@ -130,4 +130,4 @@ Tests that need recordings, which are not committed, skip themselves when the me
 
 ## License
 
-No license has been chosen yet. Until one is added, the code is not licensed for reuse.
+Frameflow is free software under the [GNU General Public License v3.0](LICENSE) — the same license as Shotcut. You may use, study, change and share it; if you distribute a modified version, you must make its source available under the same license.
