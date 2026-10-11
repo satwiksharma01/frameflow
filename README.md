@@ -10,6 +10,21 @@ raw recording  →  first cut (a real .mlt project)  →  you edit in Shotcut  �
 
 > **Status: early and experimental.** Cutting talking-head and screen recordings works end to end on real footage. B-roll, captions, graphics and short-form reframing are not built. Developed and tested on Windows 11 only.
 
+## Try the core logic in two minutes
+
+This synthetic example needs Python and `jsonschema` only. It does not download a Whisper model, read a recording, call an API, or need Shotcut:
+
+```bash
+git clone https://github.com/satwiksharma01/frameflow.git
+cd frameflow
+python -m pip install "jsonschema>=4.26.0"
+python -m examples.demo_timeline
+```
+
+It removes an illustrative two-second pause from a ten-second source and writes the validated edit plan and timeline to `output/demo/`. The second kept clip starts at 4.8 seconds in the source and 2.8 seconds in the output. The source path is a placeholder: this demonstrates timeline construction, not speech recognition, cut quality or a playable export. CI runs this command on Linux and Windows.
+
+[Engineering decisions and evidence](docs/ENGINEERING.md) · [Contributing](CONTRIBUTING.md)
+
 ## What it does
 
 **First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is a Shotcut project with each kept span as its own clip, and a written reason for every decision.
