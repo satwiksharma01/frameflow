@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 """Speech-to-text plus silence detection for a source video.
 
-Transcription uses whisper.cpp's CLI - a standalone download, also bundled
-with Shotcut - so no PyTorch install. Whisper's segment timestamps are not trustworthy as cut
+Transcription uses whisper.cpp's CLI, so no PyTorch install. Any whisper-cli
+works (on PATH, or Shotcut's); `--install` fetches the build OpenWhispr (MIT)
+pins and tests, and a model OpenWhispr already downloaded is used if
+Frameflow has none of its own. Whisper's segment timestamps are not trustworthy as cut
 points on their own: they absorb the pauses around speech, so a segment can
 start seconds before the words do. Silence is therefore measured separately
 from the audio with ffmpeg's silencedetect, and both signals go to the editor.
 
 Usage:
     python -m project.transcribe <video> [-o transcript.json] [--language auto]
+    python -m project.transcribe --install      # fetch the engine (and a model if none)
 """
 import argparse
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 from project.media import _find_tool, analyze
@@ -24,6 +31,19 @@ from project.validate import validate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL = REPO_ROOT / "models" / "ggml-large-v3-turbo-q5_0.bin"
+MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+MODEL_SHA256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+
+# OpenWhispr's build of whisper.cpp: the release OpenWhispr pins and tests, with
+# the MSVC runtime DLLs beside the exe so it runs without the VC++ redistributable.
+OPENWHISPR_ENGINE_URL = ("https://github.com/OpenWhispr/whisper.cpp/releases/download/0.0.11/"
+                         "whisper-cpp-win32-x64-cpu.zip")
+OPENWHISPR_ENGINE_SHA256 = "b62b30d4b605f5202c8daa257e90c76ad65d3738de33534e798aecc27363eca8"
+ENGINE_DIR = REPO_ROOT / "tools" / "whisper.cpp-openwhispr-0.0.11"
+ENGINE_EXE = ENGINE_DIR / "whisper-cpp-win32-x64-cpu.exe"
+# Where OpenWhispr keeps the models it downloads, and its names for them, best first.
+OPENWHISPR_MODELS = Path.home() / ".cache" / "openwhispr" / "whisper-models"
+_OPENWHISPR_PREFERENCE = ("large-v3-turbo", "turbo", "large-v3", "large", "medium", "small", "base", "tiny")
 
 # Quiet enough to catch real pauses, loud enough to ignore room tone.
 SILENCE_NOISE_DB = -35
@@ -54,24 +74,71 @@ def find_whisper_cli() -> str:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
         candidates.append(Path(local_app_data) / "Programs" / "Shotcut" / "whisper-cli.exe")
+    candidates.append(ENGINE_EXE)
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
     raise TranscriptionError(
-        "whisper-cli not found. Download whisper.cpp's Windows build (whisper-bin-x64.zip from "
-        "https://github.com/ggml-org/whisper.cpp/releases) and put whisper-cli on PATH or set "
-        "FRAMEFLOW_WHISPER_CLI to it. Shotcut also bundles it, if you have Shotcut installed."
+        "whisper-cli not found. Run `python -m project.transcribe --install` to fetch OpenWhispr's "
+        "build of whisper.cpp, or put whisper-cli on PATH or set FRAMEFLOW_WHISPER_CLI to it."
     )
 
 
 def find_model(model: Path | str | None = None) -> Path:
-    path = Path(model or os.environ.get("FRAMEFLOW_WHISPER_MODEL") or DEFAULT_MODEL)
+    named = model or os.environ.get("FRAMEFLOW_WHISPER_MODEL")
+    if named:
+        path = Path(named)
+    elif DEFAULT_MODEL.exists():
+        path = DEFAULT_MODEL
+    else:
+        # A model the creator's OpenWhispr already downloaded saves downloading another.
+        path = next((p for p in (OPENWHISPR_MODELS / f"ggml-{n}.bin" for n in _OPENWHISPR_PREFERENCE)
+                     if p.exists()), DEFAULT_MODEL)
     if not path.exists():
         raise TranscriptionError(
-            f"Whisper model not found at {path}. Download a ggml model from "
-            f"huggingface.co/ggerganov/whisper.cpp or set FRAMEFLOW_WHISPER_MODEL."
+            f"Whisper model not found at {path}. Run `python -m project.transcribe --install`, "
+            f"download a ggml model from huggingface.co/ggerganov/whisper.cpp, or set "
+            f"FRAMEFLOW_WHISPER_MODEL."
         )
     return path
+
+
+def _download(url: str, dest: Path, sha256: str) -> Path:
+    """Fetch a file and keep it only if it is exactly the one expected."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    partial = dest.with_name(dest.name + ".part")
+    digest = hashlib.sha256()
+    with urllib.request.urlopen(url, timeout=60) as response, open(partial, "wb") as out:
+        while chunk := response.read(1 << 20):
+            digest.update(chunk)
+            out.write(chunk)
+    if digest.hexdigest() != sha256:
+        partial.unlink()
+        raise TranscriptionError(f"{url} did not match its expected checksum; not using it")
+    partial.replace(dest)
+    return dest
+
+
+def install() -> list[str]:
+    """Fetch what transcription needs and is missing. Returns what was done."""
+    done = []
+    try:
+        done.append(f"engine: using {find_whisper_cli()}")
+    except TranscriptionError:
+        if sys.platform != "win32":
+            raise TranscriptionError("OpenWhispr's build is fetched for Windows only; install "
+                                     "whisper.cpp's whisper-cli and put it on PATH") from None
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = _download(OPENWHISPR_ENGINE_URL, Path(tmp) / "engine.zip", OPENWHISPR_ENGINE_SHA256)
+            with zipfile.ZipFile(archive) as z:
+                z.extractall(ENGINE_DIR)
+        done.append(f"engine: installed OpenWhispr's whisper.cpp in {ENGINE_DIR}")
+    try:
+        done.append(f"model: using {find_model()}")
+    except TranscriptionError:
+        print("    downloading the Whisper model (548 MB)...", flush=True)
+        done.append(f"model: downloaded {_download(MODEL_URL, DEFAULT_MODEL, MODEL_SHA256)}")
+    return done
 
 
 def extract_audio(video: Path | str, wav: Path | str, duration: float) -> None:
@@ -208,12 +275,23 @@ def transcribe(video: Path | str, model: Path | str | None = None, language: str
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Transcribe a video and detect silences.")
-    parser.add_argument("video")
+    parser.add_argument("video", nargs="?")
+    parser.add_argument("--install", action="store_true",
+                        help="fetch the transcription engine, and a model if there is none")
     parser.add_argument("-o", "--output", help="write transcript JSON here instead of stdout")
     parser.add_argument("--language", default="auto", help="spoken language code, or 'auto'")
     parser.add_argument("--model", help="ggml Whisper model path")
     args = parser.parse_args()
 
+    if args.install:
+        try:
+            for line in install():
+                print(line)
+        except TranscriptionError as e:
+            sys.exit(str(e))
+        return
+    if not args.video:
+        parser.error("give a video to transcribe, or --install")
     transcript = transcribe(args.video, args.model, args.language)
     text = json.dumps(transcript, indent=2, ensure_ascii=False)
     if args.output:

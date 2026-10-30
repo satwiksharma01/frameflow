@@ -183,6 +183,36 @@ Not yet: graphics in a first cut (today they come from an edit), captions
 generated from the transcript word by word, and audio from a composition
 (rendered `.mov` files are picture only).
 
+## OpenWhispr: transcription, and talking to Frameflow
+
+OpenWhispr (OpenWhispr/openwhispr, MIT) is a dictation app built on
+whisper.cpp. Frameflow uses it two ways:
+
+- **Its transcription engine.** OpenWhispr pins and tests its own whisper.cpp
+  builds (OpenWhispr/whisper.cpp, release 0.0.11). Besides the server its app
+  runs, each release has a plain CLI build, `whisper-cpp-win32-x64-cpu.zip`
+  (1.2 MB): whisper-cli under another name, with every option Frameflow uses,
+  and the MSVC runtime DLLs beside it so it runs without the VC++
+  redistributable. `python -m project.transcribe --install` fetches it into
+  `tools/`, checked against the SHA-256 GitHub publishes for it, which is
+  pinned in the code. Frameflow also uses a model in OpenWhispr's cache
+  (`~/.cache/openwhispr/whisper-models/ggml-<name>.bin`) when it has none of
+  its own. The installed app only ships the server, so Frameflow fetches the
+  CLI build rather than depending on the app.
+- **Dictation.** The app itself lets the creator speak prompts and edit
+  requests into Claude Code. Nothing in Frameflow is needed for that.
+
+This unblocked transcription on this machine, which had a model but no
+whisper-cli. First cuts, footage in the prompt workflow, and the check by ear
+now run end to end: 25.7 s of footage transcribes in about 37 s on the CPU.
+The check by ear rendered a join through libopenshot and re-transcribed it;
+on the test recording, which is mostly room noise, Whisper's word timings are
+too loose for its verdict to mean much (it stretched one word over 9.6 s).
+
+Not yet: GPU transcription (OpenWhispr's CUDA build is 773 MB; its Vulkan
+build is server-only), and Parakeet, OpenWhispr's faster model, which runs on
+sherpa-onnx rather than whisper.cpp.
+
 ## The content workflow: a video from a prompt
 
 One prompt in, with whatever the creator has: a script, recordings, images or

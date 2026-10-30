@@ -32,8 +32,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 | **Python** | 3.10 or newer (tested on 3.13) |
 | **OpenShot** | 4.0.x, in `C:\Program Files\OpenShot Video Editor` or `%LOCALAPPDATA%\Programs\OpenShot Video Editor`. Frameflow reads its profile list to name the project's size and frame rate the way OpenShot will recognise them |
 | **FFmpeg** | `ffmpeg` and `ffprobe`, on `PATH` or in `%LOCALAPPDATA%\Programs\ffmpeg\bin` |
-| **whisper-cli** | whisper.cpp's transcriber: `whisper-bin-x64.zip` from [whisper.cpp's releases](https://github.com/ggml-org/whisper.cpp/releases), with `whisper-cli` on `PATH` or named by `FRAMEFLOW_WHISPER_CLI`. Shotcut bundles it too, and Frameflow finds that copy if Shotcut is installed |
-| **Whisper model** | `ggml-large-v3-turbo-q5_0.bin` (548 MB) from the [whisper.cpp model repository](https://huggingface.co/ggerganov/whisper.cpp), saved into `models/` |
+| **Transcription** | `python -m project.transcribe --install` fetches [OpenWhispr](https://github.com/OpenWhispr/openwhispr)'s build of whisper.cpp (1.2 MB, MIT, checksum-verified) into `tools/`, and the `ggml-large-v3-turbo-q5_0.bin` model (548 MB) into `models/` if there is none. Any `whisper-cli` already on `PATH`, or Shotcut's, is used instead; so is a model OpenWhispr has already downloaded |
 | **Node.js** | 22 or newer, for graphics: Frameflow runs [HyperFrames](https://github.com/heygen-com/hyperframes) 0.8.199 through `npx` to render titles, captions and cards |
 | **Shotcut** (optional) | 26.x, only for `--editor shotcut`. Its `melt` engine checks and renders Shotcut projects |
 
@@ -41,7 +40,13 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 pip install -r requirements.txt
 ```
 
+```bash
+python -m project.transcribe --install
+```
+
 `FRAMEFLOW_WHISPER_CLI` and `FRAMEFLOW_WHISPER_MODEL` override where the transcriber and model are looked for.
+
+**Talk instead of typing.** Install the [OpenWhispr](https://github.com/OpenWhispr/openwhispr/releases/latest) app, press its hotkey in Claude Code and say what you want - "make a 15 second reel for the new jacket", "tighten the intro". It transcribes on your computer, so your words don't leave it.
 
 ## Making a first cut
 

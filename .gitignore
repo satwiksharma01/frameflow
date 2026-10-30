@@ -19,3 +19,6 @@ output/
 
 # Local credentials - each user brings their own provider key
 .env
+
+# Transcription engine fetched by python -m project.transcribe --install
+tools/
