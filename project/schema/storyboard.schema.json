@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/storyboard.schema.json",
+  "title": "FrameflowStoryboard",
+  "description": "The video scene by scene, in playing order. Each scene says what is seen, and optionally what a voice says and what text shows over it. Frameflow builds an editable project from it: picture on the main track, graphics on a Graphics track, the voice and the music on their own audio tracks.",
+  "type": "object",
+  "required": ["script", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "script": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The whole script as the viewer will hear and read it, for the creator to approve."
+    },
+    "voice": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional: which installed voice reads the narration (one of those listed in the request). The first one when absent."
+    },
+    "music": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "description": "Optional background music for the whole video: one of the creator's music files.",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "volume_db": { "type": "number", "maximum": 0, "description": "Optional; -18 under narration and -6 without when absent." }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scene" }
+    }
+  },
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "required": ["visual", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "visual": {
+          "oneOf": [
+            { "$ref": "#/$defs/footage" },
+            { "$ref": "#/$defs/asset" },
+            { "$ref": "#/$defs/title" },
+            { "$ref": "#/$defs/composition" }
+          ]
+        },
+        "narration": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional: what the voice says during this scene. The scene lasts at least as long as it takes to say. Over footage or an asset, the visual's own sound is turned right down so the voice is heard."
+        },
+        "caption": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional: text shown low in the frame for the whole scene."
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Seconds. Needed for an image, title or composition without narration; otherwise optional. A footage scene lasts as long as its span."
+        },
+        "reason": { "type": "string", "minLength": 1, "description": "Why this scene is here, for the creator." }
+      }
+    },
+    "footage": {
+      "type": "object",
+      "required": ["type", "source", "start", "end"],
+      "additionalProperties": false,
+      "description": "A span of one of the creator's recordings, in source seconds read from its transcript. Its own sound plays unless the scene has narration.",
+      "properties": {
+        "type": { "const": "footage" },
+        "source": { "type": "string", "minLength": 1, "description": "File name of the recording, as listed in the request." },
+        "start": { "type": "number", "minimum": 0 },
+        "end": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "required": ["type", "path"],
+      "additionalProperties": false,
+      "description": "One of the creator's images or video clips. An image fills the frame with a slow push in; a clip plays from `start`.",
+      "properties": {
+        "type": { "const": "asset" },
+        "path": { "type": "string", "minLength": 1, "description": "As listed in the request." },
+        "start": { "type": "number", "minimum": 0, "description": "Optional, clips only: seconds into the clip to start from." }
+      }
+    },
+    "title": {
+      "type": "object",
+      "required": ["type", "text"],
+      "additionalProperties": false,
+      "description": "Large centred text on black, rendered by HyperFrames - an opening title, a key number, a closing call to action.",
+      "properties": {
+        "type": { "const": "title" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "composition": {
+      "type": "object",
+      "required": ["type", "path"],
+      "additionalProperties": false,
+      "description": "A HyperFrames project folder you wrote, for anything a title cannot do: its index.html at the video's width, height and frame rate, at least as long as the scene.",
+      "properties": {
+        "type": { "const": "composition" },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

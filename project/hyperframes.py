@@ -40,9 +40,9 @@ _CARD = """<!doctype html>
 *{{box-sizing:border-box;margin:0}}
 html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent;font-family:Arial,Helvetica,sans-serif}}
 #root{{width:{w}px;height:{h}px;position:relative}}
-#card{{position:absolute;left:50%;bottom:{bottom}px;max-width:{max_w}px;padding:{pad_y}px {pad_x}px;
+#card{{position:absolute;left:50%;{anchor};width:max-content;max-width:{max_w}px;padding:{pad_y}px {pad_x}px;
   border-radius:{radius}px;background:rgba(16,24,39,.78);color:#fff;font-size:{size}px;font-weight:700;
-  line-height:1.2;text-align:center;opacity:0;transform:translateX(-50%)}}
+  line-height:1.2;text-align:center;opacity:0;transform:{base}}}
 </style></head>
 <body><div id="root" data-composition-id="main" data-start="0" data-duration="{d}" data-width="{w}" data-height="{h}" data-fps="{fps}">
 <div id="card" class="clip" data-start="0" data-duration="{d}" data-track-index="0">{text}</div></div>
@@ -53,7 +53,7 @@ function show(t) {{
   const k = Math.max(0, Math.min(1, t / IN, (D - t) / OUT));
   const ease = 1 - Math.pow(1 - k, 3);
   card.style.opacity = ease;
-  card.style.transform = "translateX(-50%) translateY(" + ((1 - ease) * {rise}) + "px)";
+  card.style.transform = "{base} translateY(" + ((1 - ease) * {rise}) + "px)";
 }}
 const timeline = {{
   seek(t) {{ now = t; show(t); return timeline; }},
@@ -71,12 +71,17 @@ class HyperFramesError(Exception):
     pass
 
 
-def card_html(text: str, width: int, height: int, fps: float, duration: float) -> str:
+def card_html(text: str, width: int, height: int, fps: float, duration: float,
+              layout: str = "lower") -> str:
+    """A text card: "lower" sits low in the frame over footage, "title" is centred and larger."""
     unit = min(width, height) / 1080      # sized for 1080 on the short side; portrait fits too
+    title = layout == "title"
     return _CARD.format(
         w=width, h=height, fps=_rate(fps), d=round(duration, 6), text=html.escape(text),
-        bottom=round(height * 0.11), max_w=round(width * 0.84), pad_y=round(26 * unit),
-        pad_x=round(44 * unit), radius=round(22 * unit), size=round(60 * unit), rise=round(90 * unit))
+        anchor="top:50%" if title else f"bottom:{round(height * 0.11)}px",
+        base="translate(-50%,-50%)" if title else "translateX(-50%)",
+        max_w=round(width * 0.84), pad_y=round(26 * unit), pad_x=round(44 * unit),
+        radius=round(22 * unit), size=round((96 if title else 60) * unit), rise=round(90 * unit))
 
 
 def _npx() -> str:
@@ -121,7 +126,8 @@ def render_clip(clip: dict, project: dict, folder: Path) -> Path:
         if not clip.get("text"):
             raise HyperFramesError(f"clip {clip['id']!r} has neither text nor a composition")
         page = card_html(clip["text"], project["width"], project["height"], fps,
-                         clip["timeline_duration"])
+                         clip["timeline_duration"],
+                         (clip.get("generator_params") or {}).get("layout", "lower"))
         source = graphics / "cards" / hashlib.sha256(page.encode()).hexdigest()[:16]
         source.mkdir(parents=True, exist_ok=True)
         (source / "index.html").write_text(page, encoding="utf-8")

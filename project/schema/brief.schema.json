@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/brief.schema.json",
+  "title": "FrameflowBrief",
+  "description": "What the creator asked for, as the editor understood it - confirmed with the creator before any storyboard is written.",
+  "type": "object",
+  "required": ["title", "format", "aspect", "target_seconds", "audience", "tone", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "description": "A short working title." },
+    "format": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The kind of video in a few words, e.g. \"fashion reel\", \"YouTube explainer\", \"product pitch\", \"startup pitch\"."
+    },
+    "aspect": {
+      "type": "string",
+      "enum": ["16:9", "9:16", "1:1"],
+      "description": "16:9 for YouTube and pitches, 9:16 for Reels, Shorts and TikTok, 1:1 for square feeds."
+    },
+    "fps": { "type": "integer", "enum": [24, 25, 30, 60], "description": "Optional; 30 when absent, or the footage's own rate." },
+    "target_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "audience": { "type": "string", "minLength": 1 },
+    "tone": { "type": "string", "minLength": 1 },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Two or three sentences for the creator: what this video is, what it shows, and how it ends (the call to action)."
+    },
+    "skills": {
+      "type": "array",
+      "description": "Optional: skills from the creator's library this video will use, each with why.",
+      "items": {
+        "type": "object",
+        "required": ["name", "why"],
+        "additionalProperties": false,
+        "properties": { "name": { "type": "string", "minLength": 1 }, "why": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "Anything essential the prompt left open. Ask the creator these before going on.",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

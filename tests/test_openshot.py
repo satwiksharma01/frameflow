@@ -10,11 +10,13 @@ Run with: python -m unittest discover tests
 """
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from project.parse_mlt import quantize_ir
+from project.media import _find_tool
 from project.parse_osp import ParseError, parse_osp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -346,14 +348,6 @@ class TestEditors(unittest.TestCase):
 class TestCompilerRefusals(unittest.TestCase):
     """What the compiler will not guess at, and says so - before probing any media."""
 
-    def test_an_audio_track_is_refused_by_name(self):
-        from project.compile_osp import build_osp
-        ir = _ir([{"id": "A1", "type": "audio", "clips": [
-            {"id": "c1", "source": "x.wav", "timeline_start": 0.0, "timeline_duration": 1.0}]}])
-        with self.assertRaises(NotImplementedError) as cm:
-            build_osp(ir, Path("."))
-        self.assertIn("A1", str(cm.exception))
-
     def test_a_caption_clip_with_no_source_is_refused_by_name(self):
         from project.compile_osp import build_osp
         ir = _ir([{"id": "C1", "type": "captions", "clips": [
@@ -366,6 +360,65 @@ class TestCompilerRefusals(unittest.TestCase):
         from project.compile_osp import build_osp
         with self.assertRaises(ValueError):
             build_osp(_ir([{"id": "V1", "type": "video", "clips": []}]), Path("."))
+
+
+class TestAudioTrack(unittest.TestCase):
+    """A voice on its own track, heard through OpenShot's own engine."""
+
+    def setUp(self):
+        if not NORMALIZED_MEDIA.exists():
+            self.skipTest("media not present")
+        if not _have_profiles():
+            self.skipTest("OpenShot's profiles not found; is OpenShot installed?")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        # Two seconds of tone, standing in for a voiceover.
+        self.voice = self.root / "voice.wav"
+        subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                        "sine=frequency=440:duration=2", str(self.voice)], check=True)
+
+    def project(self):
+        video = _clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 4.0)
+        video["volume_db"] = -60.0
+        voice = {"id": "clip1", "source": self.voice.as_posix(), "source_in": 0.0, "source_out": 2.0,
+                 "timeline_start": 1.0, "timeline_duration": 2.0, "volume_db": -6.0}
+        return _ir([{"id": "V1", "type": "video", "clips": [video]},
+                    {"id": "Voice", "type": "audio", "clips": [voice]}])
+
+    def test_an_audio_track_round_trips(self):
+        from project.compile_osp import compile_file
+        ir_path = self.root / "p.ir.json"
+        ir_path.write_text(json.dumps(self.project()), encoding="utf-8")
+        parsed = parse_osp(compile_file(ir_path, self.root / "p.osp"))
+        self.assertEqual([(t["id"], t["type"]) for t in parsed["tracks"]], [("V1", "video"), ("Voice", "audio")])
+        voice = parsed["tracks"][1]["clips"][0]
+        self.assertEqual((voice["timeline_start"], voice["timeline_duration"]), (1.0, 2.0))
+        self.assertAlmostEqual(voice["volume_db"], -6.0, places=4)
+        osp = json.loads((self.root / "p.osp").read_text(encoding="utf-8"))
+        self.assertEqual({f["media_type"] for f in osp["files"]}, {"video", "audio"})
+
+    def test_openshots_engine_plays_the_voice(self):
+        from project import openshot_build
+        from project.compile_osp import compile_file
+        if openshot_build.install_dir() is None:
+            self.skipTest("OpenShot is not installed")
+        ir_path = self.root / "p.ir.json"
+        ir_path.write_text(json.dumps(self.project()), encoding="utf-8")
+        osp = compile_file(ir_path, self.root / "p.osp")
+        wav = self.root / "all.wav"
+        result = openshot_build.run_script(REPO_ROOT / "project" / "openshot_render.py",
+                                           str(osp), str(wav), cwd=self.root)
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        # The tone plays from 1s to 3s and nowhere else. The footage is turned down
+        # to -60 dB so its own sound cannot pass for the tone.
+        def tone(start):
+            r = subprocess.run([_find_tool("ffmpeg"), "-nostats", "-ss", str(start), "-t", "0.8", "-i", str(wav),
+                                "-af", "bandpass=f=440:width_type=q:w=30,volumedetect", "-f", "null", "-"],
+                               capture_output=True, text=True)
+            return float(r.stderr.split("max_volume:")[1].split("dB")[0])
+        self.assertGreater(tone(1.5), -35)
+        self.assertLess(tone(3.2), -60)
 
 
 if __name__ == "__main__":

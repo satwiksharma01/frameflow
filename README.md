@@ -14,6 +14,8 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 **First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision.
 
+**A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles and captions rendered by HyperFrames, a voiceover read by a voice on your computer, and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
+
 **Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. The previous version is always kept.
 
 **What it will not do quietly:**
@@ -120,7 +122,8 @@ Two rules come from things that went wrong on real recordings:
 
 | | |
 |---|---|
-| `project/first_cut.py`, `project/edit.py` | The two commands |
+| `project/first_cut.py`, `project/edit.py`, `project/produce.py` | The three commands: cut a recording, change a project, make a video from a prompt |
+| `project/hyperframes.py`, `project/voiceover.py` | Titles, captions and cards rendered by HyperFrames; the voiceover |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |
 | `project/cutpoints.py`, `project/verify_cuts.py` | Placing cuts in pauses, and listening to them afterwards |
 | `project/reconcile.py`, `project/operations.py` | Working out your hand edits; applying changes without undoing them |
@@ -128,7 +131,7 @@ Two rules come from things that went wrong on real recordings:
 | `project/compile_osp.py`, `project/parse_osp.py`, `project/openshot_template.py` | Writing and reading OpenShot projects |
 | `project/openshot_build.py`, `project/openshot_patch/`, `project/openshot_live.py`, `project/openshot_render.py` | Frameflow's build of OpenShot: its patch, the client that drives its window, and the engine render |
 | `project/compile_mlt.py`, `project/parse_mlt.py` | Writing and reading Shotcut projects |
-| `project/schema/` | JSON Schemas for the project model, edit plans and operations |
+| `project/schema/` | JSON Schemas for the project model, edit plans, operations, briefs and storyboards |
 | `project/providers/` | Anthropic and OpenAI-compatible model providers |
 | `examples/` | Real projects saved by OpenShot and Shotcut, used as test fixtures |
 

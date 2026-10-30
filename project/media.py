@@ -146,6 +146,28 @@ def normalize_to_cfr(video_path: Path | str, output_path: Path | str, fps: int) 
     return output_path
 
 
+def still_to_clip(image: Path | str, output_path: Path | str, width: int, height: int,
+                  fps: int, seconds: float) -> Path:
+    """A still image as a clip that fills the frame, with a slow push in."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    frames = max(1, round(seconds * fps))
+    # Fill (crop, never letterbox) at twice the size first, so the zoom stays sharp.
+    fill = (f"scale={width * 2}:{height * 2}:force_original_aspect_ratio=increase,"
+            f"crop={width * 2}:{height * 2},setsar=1")
+    zoom = (f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            f":d={frames}:s={width}x{height}:fps={fps}")
+    result = subprocess.run(
+        [_find_tool("ffmpeg"), "-y", "-v", "error", "-i", str(image), "-vf", f"{fill},{zoom}",
+         "-frames:v", str(frames), "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+         "-pix_fmt", "yuv420p", str(output_path)],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        raise MediaError(f"could not turn {image} into a clip: {result.stderr[-2000:]}")
+    return output_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Probe or normalize a video's frame rate.")
     parser.add_argument("video")

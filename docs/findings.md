@@ -183,33 +183,65 @@ Not yet: graphics in a first cut (today they come from an edit), captions
 generated from the transcript word by word, and audio from a composition
 (rendered `.mov` files are picture only).
 
-## The content workflow (agreed, not built yet)
+## The content workflow: a video from a prompt
 
-One prompt in: what the creator wants, plus an optional script, raw footage
-and assets. The video does not have to show the creator's face. Stages: brief
-→ script → storyboard (each scene picks its source: footage, graphic, asset,
-generated media, voiceover) → make the pieces → assemble into the editable
-project → check and refine.
+One prompt in, with whatever the creator has: a script, recordings, images or
+clips, music. The video does not have to show the creator's face.
+`project/produce.py` runs it in three stages, each a request the AI answers
+with a JSON file that the next stage checks:
 
-Two kinds of capability:
+1. **Brief** (`brief.json`): format, aspect (16:9, 9:16 or 1:1), length,
+   audience, tone, the skills it will use, and any open questions. The creator
+   confirms it; open questions block the next stage.
+2. **Storyboard** (`storyboard.json`): the script, then each scene in order -
+   what is seen (a footage span, an image or clip, a HyperFrames title or
+   composition), what the voice says, an optional caption. The creator
+   confirms it.
+3. **Build**: Windows' built-in voice reads each scene's narration; a scene
+   lasts as long as its footage span, or as long as its narration takes. Images
+   become clips with a slow push in. Titles and captions are rendered by
+   HyperFrames. The project gets V1 (picture), Graphics, Captions, Voice and
+   Music tracks. Under narration a visual's own sound drops to -60 dB; music
+   sits at -18 dB under a voice, -6 dB without, and fades out at the end.
 
-- **Skills are a library, not wiring.** Content skills (hooks, scripts,
-  platform playbooks, caption styles) sit in one folder with a description
-  each. For every video the AI writes a plan naming the skills it will use and
-  why, and the creator can change it. A per-user profile (brand voice, skills
-  always or never used) personalises it. The creator will share their skills
-  later.
-- **Features are built-in engines** with a fixed contract, registered in a
-  table like the editors: first cut, HyperFrames graphics, a "make it like
-  this reference video" engine, and later voiceover and music.
+The result is an ordinary Frameflow project, so edits and the live OpenShot
+window work on it as on any other.
 
-The reference-video engine will be the creator's own rebuild of Hypit's idea,
-written from scratch. Hypit itself (hypit-ai/hypit) is under a modified Apache
-2.0 that forbids bundling it in a product sold to others or hosting it for
-other people without a commercial license. A from-scratch rebuild avoids that,
-as long as no Hypit code is copied into it. How Frameflow uses the engine will
-be decided once it exists; the key question is whether it hands over separate
-layers that land on separate tracks rather than one flat render.
+Two kinds of capability, as agreed:
+
+- **Skills are a library, not wiring.** The brief names the skills a video
+  will use and why; the creator can change that. The creator will share their
+  skills later, and a planner that offers them is still to build.
+- **Features are built-in engines** with a fixed contract: first cut,
+  HyperFrames graphics, voiceover, and later a "make it like this reference
+  video" engine - the creator's own from-scratch rebuild of Hypit's idea.
+  Hypit itself (hypit-ai/hypit) is under a modified Apache 2.0 that forbids
+  bundling it in a product sold to others or hosting it for other people
+  without a commercial license; a rebuild avoids that as long as no Hypit code
+  is copied in.
+
+What was learned building it:
+
+- **OpenShot audio tracks**: OpenShot has none as such; an audio track is a
+  layer of sound files, which draw nothing, so Frameflow puts them above the
+  picture (the bottom layer is the main track). A sound file's reader must carry
+  the fields libopenshot gives it itself - stream index, timebase, channel
+  layout, frame rate and frame count - or it plays silence. Video readers do not
+  need them. Found by rendering through libopenshot: the first audio test only
+  compared levels and passed on the footage's own sound.
+- **HyperFrames cards** centred with `left:50%` lay out in half the frame and
+  wrap early; `width:max-content` with a max width fixes it.
+- Vertical (`FHD Vertical 1080p 30 fps`) and square profiles exist in
+  OpenShot 4.0.1.
+
+Checked: a 9:16 product reel built from a prompt, an image and music - three
+scenes, 14.1 s - rendered through libopenshot, with the voice and music heard
+throughout and the titles, image and caption where the storyboard put them.
+
+Not yet: an API mode (today the coding agent is the editor), stock footage and
+AI-generated pictures, a better voice than Windows' (Piper or a paid one, as
+another function in `voiceover.py`), word-by-word captions, and muting rather
+than -60 dB (a volume of 0 is not read back yet).
 
 ## Deliberately not done
 

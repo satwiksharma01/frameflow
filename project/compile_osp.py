@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from project.compile_mlt import fps_to_fraction, resource_path, sec_to_frames
-from project.media import analyze
+from project.media import analyze, probe
 from project.openshot_template import CLIP_DEFAULTS, build_root, keyframe, layer, ratio
 from project.sidecar import write_sidecar
 from project.validate import validate
@@ -26,18 +26,12 @@ from project.validate import validate
 def _compilable_tracks(ir: dict) -> list[dict]:
     """Every track, in IR order - bottom to top, as OpenShot's layers are.
 
-    Refused rather than guessed at, for the same reasons as the MLT compiler:
-    an audio track has not been checked against a project OpenShot wrote, and
-    a clip with no source is a caption or generated visual with no file to
-    point a reader at.
+    OpenShot has no audio tracks as such: an audio track is a layer of sound
+    files, which draw nothing, so it may sit anywhere in the stack. A clip with
+    no source is refused: it is a caption or generated visual with no file to
+    point a reader at (hyperframes.render_generated gives it one first).
     """
     tracks = ir["tracks"]
-    audio = [t["id"] for t in tracks if t["type"] == "audio"]
-    if audio:
-        raise NotImplementedError(
-            f"audio tracks are not compiled for OpenShot yet: {', '.join(audio)}. "
-            "How OpenShot represents one has not been checked against a project it saved."
-        )
     sourceless = [c["id"] for t in tracks for c in t["clips"] if "source" not in c]
     if sourceless:
         raise NotImplementedError(
@@ -94,6 +88,40 @@ def _levels(clip: dict, in_f: int, length_f: int, fps: float) -> dict:
     }
 
 
+def _audio_reader(path: str, source: str, fps: float) -> tuple[dict, float]:
+    """A sound file's reader, with the fields libopenshot gives one itself.
+
+    Unlike a video's, these are not optional: a sound file's reader without
+    its stream index, timebase, channel layout and frame count plays silence
+    (checked by rendering through libopenshot 1.0.1).
+    """
+    data = probe(source)
+    stream = next((s for s in data["streams"] if s.get("codec_type") == "audio"), None)
+    if stream is None:
+        raise ValueError(f"{source} has no audio stream")
+    duration = float(stream.get("duration") or data["format"]["duration"])
+    channels = int(stream.get("channels", 2))
+    tb_num, tb_den = (int(x) for x in stream.get("time_base", "1/48000").split("/"))
+    fps_num, fps_den = fps_to_fraction(fps)
+    return {
+        "type": "FFmpegReader",
+        "path": path,
+        "has_video": False,
+        "has_audio": True,
+        "has_single_image": False,
+        "duration": duration,
+        "acodec": stream.get("codec_name", ""),
+        "sample_rate": int(stream.get("sample_rate", 48000)),
+        "channels": channels,
+        "channel_layout": 4 if channels == 1 else 3,       # libopenshot's LAYOUT_MONO, LAYOUT_STEREO
+        "audio_stream_index": int(stream["index"]),
+        "audio_timebase": {"num": tb_num, "den": tb_den},
+        "video_stream_index": -1,
+        "fps": {"num": fps_num, "den": fps_den},
+        "video_length": sec_to_frames(duration, fps),
+    }, duration
+
+
 def build_osp(ir: dict, project_dir: Path) -> dict:
     """Compile the IR. Sources are written relative to project_dir where they
     can be, as OpenShot writes them itself."""
@@ -109,13 +137,17 @@ def build_osp(ir: dict, project_dir: Path) -> dict:
         for clip in track["clips"]:
             if clip["source"] in sources:
                 continue
-            info = analyze(clip["source"])
-            reader = _reader(resource_path(clip["source"], project_dir), info)
+            path = resource_path(clip["source"], project_dir)
+            if track["type"] == "audio":
+                reader, duration = _audio_reader(path, clip["source"], fps)
+                media_type = "audio"
+            else:
+                info = analyze(clip["source"])
+                reader, duration, media_type = _reader(path, info), info.duration_seconds, "video"
             file_id = f"FFFILE{len(files) + 1:04d}"
-            files.append({**reader, "media_type": "video", "id": file_id})
+            files.append({**reader, "media_type": media_type, "id": file_id})
             # Frames at the project's rate, as the MLT compiler counts them.
-            sources[clip["source"]] = (file_id, reader,
-                                       sec_to_frames(info.duration_seconds, fps))
+            sources[clip["source"]] = (file_id, reader, sec_to_frames(duration, fps))
 
     clips, end = [], 0.0
     for index, track in enumerate(tracks):
