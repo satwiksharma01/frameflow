@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Speech-to-text plus silence detection for a source video.
 
-Transcription uses whisper.cpp's CLI, which Shotcut already bundles - no
-PyTorch install. Whisper's segment timestamps are not trustworthy as cut
+Transcription uses whisper.cpp's CLI - a standalone download, also bundled
+with Shotcut - so no PyTorch install. Whisper's segment timestamps are not trustworthy as cut
 points on their own: they absorb the pauses around speech, so a segment can
 start seconds before the words do. Silence is therefore measured separately
 from the audio with ffmpeg's silencedetect, and both signals go to the editor.
@@ -58,7 +58,9 @@ def find_whisper_cli() -> str:
         if candidate.exists():
             return str(candidate)
     raise TranscriptionError(
-        "whisper-cli not found. Install Shotcut (it bundles whisper-cli) or set FRAMEFLOW_WHISPER_CLI."
+        "whisper-cli not found. Download whisper.cpp's Windows build (whisper-bin-x64.zip from "
+        "https://github.com/ggml-org/whisper.cpp/releases) and put whisper-cli on PATH or set "
+        "FRAMEFLOW_WHISPER_CLI to it. Shotcut also bundles it, if you have Shotcut installed."
     )
 
 

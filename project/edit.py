@@ -2,20 +2,21 @@
 """Change a project the creator already has.
 
 Phase 7a: the loop the first cut could not close. Record, first cut, the
-creator edits in Shotcut, asks for a change - and the change lands with their
-edits intact.
+creator edits in their editor, asks for a change - and the change lands with
+their edits intact. The project is an OpenShot .osp or a Shotcut .mlt; its
+suffix says which.
 
-    python -m project.edit <project.mlt> --prepare "<instruction>"    # agent mode
+    python -m project.edit <project.osp> --prepare "<instruction>"    # agent mode
     (the agent follows change_request.md and writes operations.json)
-    python -m project.edit <project.mlt> --apply [--open]
+    python -m project.edit <project.osp> --apply [--open]
 
-    python -m project.edit <project.mlt> "<instruction>"              # API mode
+    python -m project.edit <project.osp> "<instruction>"              # API mode
 
 Every run reads the project from disk again, because the creator may have
-saved in Shotcut between --prepare and --apply. Before anything is written:
+saved in their editor between --prepare and --apply. Before anything is written:
 
-  1. anything recompiling would lose - filters, titles, crossfades, muted
-     tracks - stops the edit by name, unless --discard-unsupported;
+  1. anything recompiling would lose - effects, fades, titles, transitions,
+     muted tracks - stops the edit by name, unless --discard-unsupported;
   2. the creator's changes since Frameflow last wrote are reconciled, and an
      operation that would undo one is rejected unless it says why;
   3. the project and its sidecar are copied into history/, so every version
@@ -31,11 +32,11 @@ from datetime import datetime
 from pathlib import Path
 
 from project.change_agent import build_agent_request, build_context, propose_operations
-from project.compile_mlt import compile_file
-from project.engine_check import EngineCheckError, check_with_melt
-from project.first_cut import TIMING_FILE, _open_in_shotcut, _step, _write_json
+from project.editors import PARSE_ERRORS, editor_for
+from project.engine_check import EngineCheckError
+from project.first_cut import TIMING_FILE, _step, _write_json
+from project.openshot_template import ProfileError
 from project.operations import apply, check, main_index, resolve
-from project.parse_mlt import ParseError, parse_mlt, unsupported_content
 from project.providers import ProviderError, get_provider
 from project.reconcile import HumanChanges, reconcile, source_key
 from project.sidecar import read_sidecar, sidecar_path
@@ -55,7 +56,7 @@ class EditError(Exception):
 
 @dataclass
 class Project:
-    mlt: Path
+    path: Path
     ir: dict
     changes: HumanChanges
     timing: dict
@@ -63,7 +64,7 @@ class Project:
 
     @property
     def folder(self) -> Path:
-        return self.mlt.parent
+        return self.path.parent
 
     def placement(self) -> tuple[dict, dict]:
         """Pauses and duration for the transcribed recording, keyed as operations expect."""
@@ -94,33 +95,38 @@ def _timing(folder: Path, ir: dict, language: str) -> dict:
     return timing
 
 
-def load(mlt: Path, discard_unsupported: bool = False, language: str = "auto") -> Project:
-    if not mlt.exists():
-        raise EditError(f"no such project: {mlt}")
-    lost = unsupported_content(mlt)
+def load(path: Path, discard_unsupported: bool = False, language: str = "auto") -> Project:
+    if not path.exists():
+        raise EditError(f"no such project: {path}")
+    try:
+        editor = editor_for(path)
+    except ValueError as e:
+        raise EditError(str(e)) from e
+    editor.save_open_window(path)
+    lost = editor.unsupported_content(path)
     if lost and not discard_unsupported:
         raise EditError(
             "This project has things an edit would lose, because Frameflow rewrites the "
             "timeline from its clips alone:\n" + "\n".join(f"  - {item}" for item in lost) +
-            "\nRemove them in Shotcut and save, or rerun with --discard-unsupported - the "
+            f"\nRemove them in {editor.name} and save, or rerun with --discard-unsupported - the "
             f"current version is kept in {HISTORY_DIR}/ either way."
         )
     try:
-        ir = parse_mlt(mlt)
-    except (ParseError, ValidationError) as e:
-        raise EditError(f"could not read {mlt.name}: {e}") from e
-    changes = reconcile(read_sidecar(mlt), ir)
-    return Project(mlt, ir, changes, _timing(mlt.parent, ir, language), lost)
+        ir = editor.parse(path)
+    except (*PARSE_ERRORS, ValidationError) as e:
+        raise EditError(f"could not read {path.name}: {e}") from e
+    changes = reconcile(read_sidecar(path), ir)
+    return Project(path, ir, changes, _timing(path.parent, ir, language), lost)
 
 
-def backup(mlt: Path) -> Path:
+def backup(path: Path) -> Path:
     """Copy the project and its sidecar into history/ before they are replaced."""
-    history = mlt.parent / HISTORY_DIR
+    history = path.parent / HISTORY_DIR
     history.mkdir(exist_ok=True)
-    kept = history / f"{mlt.stem}.{datetime.now():%Y%m%d-%H%M%S}.mlt"
-    shutil.copy2(mlt, kept)
-    if sidecar_path(mlt).exists():
-        shutil.copy2(sidecar_path(mlt), sidecar_path(kept))
+    kept = history / f"{path.stem}.{datetime.now():%Y%m%d-%H%M%S}{path.suffix}"
+    shutil.copy2(path, kept)
+    if sidecar_path(path).exists():
+        shutil.copy2(sidecar_path(path), sidecar_path(kept))
     return kept
 
 
@@ -147,22 +153,26 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
         print("    No changes made; the project is untouched.")
         return None
 
-    kept = backup(project.mlt)
+    editor = editor_for(project.path)
+    kept = backup(project.path)
     ir_path = project.folder / IR_FILE
     _write_json(ir_path, new_ir)
-    compile_file(ir_path, project.mlt)
+    editor.compile_file(ir_path, project.path)
 
-    _step("Checking the project in the MLT engine")
-    try:
-        print("    loaded cleanly" if check_with_melt(project.mlt) else "    melt not found; skipped")
-    except EngineCheckError:
-        # Put the creator's version back: a project the engine rejects is worse than none.
-        shutil.copy2(kept, project.mlt)
-        if sidecar_path(kept).exists():
-            shutil.copy2(sidecar_path(kept), sidecar_path(project.mlt))
-        else:
-            sidecar_path(project.mlt).unlink(missing_ok=True)
-        raise
+    if editor.engine_check:
+        _step("Checking the project in the MLT engine")
+        try:
+            print("    loaded cleanly" if editor.engine_check(project.path)
+                  else "    melt not found; skipped")
+        except EngineCheckError:
+            # Put the creator's version back: a project the engine rejects is worse than none.
+            shutil.copy2(kept, project.path)
+            if sidecar_path(kept).exists():
+                shutil.copy2(sidecar_path(kept), sidecar_path(project.path))
+            else:
+                sidecar_path(project.path).unlink(missing_ok=True)
+            raise
+    editor.update_open_window(project.path)
 
     _step("Changes")
     for op in operations:
@@ -184,9 +194,10 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
         before = _joins(project.ir)
         fps = new_ir["project"]["fps"]
         try:
-            checks = verify_joins(new_ir, project.timing, project.mlt, include=lambda a, b: (
+            checks = verify_joins(new_ir, project.timing, project.path, include=lambda a, b: (
                 source_key(a["source"]), round(a["source_out"] * fps),
-                source_key(b["source"]), round(b["source_in"] * fps)) not in before)
+                source_key(b["source"]), round(b["source_in"] * fps)) not in before,
+                render=editor.render_audio)
         except VerificationError as e:
             print(f"    skipped: {e}")
         else:
@@ -194,7 +205,7 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
             print(f"    {len(checks) - len(suspect)} of {len(checks)} new joins sound clean")
             for c in suspect:
                 print(f"    ! {c.summary}")
-    return project.mlt
+    return project.path
 
 
 def load_operations(path: Path) -> dict:
@@ -212,7 +223,7 @@ def load_operations(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Change a project the creator already has.")
-    parser.add_argument("project", help="the .mlt to change")
+    parser.add_argument("project", help="the project to change: an OpenShot .osp or a Shotcut .mlt")
     parser.add_argument("instruction", nargs="?", help="the change, in plain words")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare", action="store_true",
@@ -224,18 +235,18 @@ def main() -> None:
     parser.add_argument("--base-url", help="API mode: OpenAI-compatible endpoint; or FRAMEFLOW_BASE_URL")
     parser.add_argument("--language", default="auto", help="spoken language, if a transcript must be made")
     parser.add_argument("--discard-unsupported", action="store_true",
-                        help="edit even though filters, titles or other effects would be lost")
-    parser.add_argument("--open", action="store_true", help="open the result in Shotcut")
+                        help="edit even though effects, fades or titles would be lost")
+    parser.add_argument("--open", action="store_true", help="open the result in its editor")
     parser.add_argument("--no-verify", action="store_true", help="skip listening to the new cuts")
     args = parser.parse_args()
 
-    mlt = Path(args.project).resolve()
+    path = Path(args.project).resolve()
     if not args.apply and not args.instruction:
         parser.error("say what to change, e.g. \"cut the part about pricing\"")
 
     try:
-        _step(f"Reading {mlt.name}")
-        project = load(mlt, args.discard_unsupported, args.language)
+        _step(f"Reading {path.name}")
+        project = load(path, args.discard_unsupported, args.language)
         for line in project.changes.lines():
             print(f"    {line}")
         operations_path = project.folder / OPERATIONS_FILE
@@ -244,7 +255,7 @@ def main() -> None:
             request = project.folder / REQUEST_FILE
             request.write_text(build_agent_request(
                 build_context(args.instruction, project.ir, project.changes, project.timing),
-                operations_path, f'python -m project.edit "{mlt}" --apply'), encoding="utf-8")
+                operations_path, f'python -m project.edit "{path}" --apply'), encoding="utf-8")
             print(f"\nChange request: {request}")
             print(f"Next: have your agent follow it and write {operations_path}, then run --apply.")
             return
@@ -262,13 +273,13 @@ def main() -> None:
 
         _step("Applying")
         result = apply_change(project, doc, verify=not args.no_verify)
-    except (EditError, ProviderError, EngineCheckError) as e:
+    except (EditError, ProviderError, EngineCheckError, ProfileError) as e:
         sys.exit(f"\n{e}")
 
     if result:
         print(f"\nChanged: {result}")
         if args.open:
-            _open_in_shotcut(result)
+            editor_for(result).open(result)
 
 
 if __name__ == "__main__":

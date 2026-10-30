@@ -3,7 +3,7 @@
 
 The counterpart of editor_agent.py, which makes first cuts. A first cut sees
 the whole recording and decides every second; a change sees the cut the
-creator has now - including anything they did in Shotcut - and makes only the
+creator has now - including anything they did in their editor - and makes only the
 change they asked for, as operations (see operations.py).
 
 What the editor is shown, and why:
@@ -38,7 +38,7 @@ TOOL_NAME = "submit_operations"
 LISTED_PAUSE_SECONDS = 0.3
 PHRASE_MAX_WORDS = 20
 
-CHANGE_GUIDANCE = """You are the editor for Frameflow, changing a creator's video project that already has a first cut. The creator may have edited it by hand in Shotcut since. Make the change their instruction asks for, and nothing else.
+CHANGE_GUIDANCE = """You are the editor for Frameflow, changing a creator's video project that already has a first cut. The creator may have edited it by hand in their video editor since. Make the change their instruction asks for, and nothing else.
 
 You change the cut with two operations on spans of the recording, given in seconds into the recording as the transcript below shows them. `remove` takes a span out of the cut. `restore` puts a span of the recording back, in recording order. Code works out which clips that trims, splits or joins.
 

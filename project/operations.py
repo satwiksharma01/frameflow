@@ -220,8 +220,12 @@ def _remove(pieces: list[dict], op: Operation) -> tuple[list[dict], bool]:
             carry += piece["gap"]            # the clip is gone; the gap before it stays
             continue
         for n, (start, end) in enumerate(x for x in (left, right) if x):
-            result.append(dict(piece, **{"in": start, "out": end, "by": op.index,
-                                         "gap": piece["gap"] + carry if n == 0 else 0.0}))
+            extra = piece["extra"]
+            if left and right:
+                # The cut makes two new edges; a fade stays on the clip's outer edge.
+                extra = {k: v for k, v in extra.items() if k != ("fade_out" if n == 0 else "fade_in")}
+            result.append(dict(piece, extra=extra, **{"in": start, "out": end, "by": op.index,
+                                                      "gap": piece["gap"] + carry if n == 0 else 0.0}))
         carry = 0.0
     return result, touched
 
@@ -252,6 +256,10 @@ def _restore(pieces: list[dict], op: Operation, fps: float) -> tuple[list[dict],
         if (following and source_key(following["source"]) == key and following["gap"] == 0.0
                 and abs(following["in"] - end) < joins):
             target["out"] = following["out"]
+            # The joined clip ends where the following one did, with its fade.
+            target["extra"] = {k: v for k, v in target["extra"].items() if k != "fade_out"}
+            if "fade_out" in following["extra"]:
+                target["extra"]["fade_out"] = following["extra"]["fade_out"]
             pieces.pop(at + 1)
     return pieces, bool(missing)
 

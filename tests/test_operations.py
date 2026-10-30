@@ -105,6 +105,14 @@ class TestRestore(unittest.TestCase):
         """The first cut removed 4-6; putting it back should read as one clip, not three."""
         self.assertEqual(spans(run(self.BASE, op("restore", 4, 6))), [(0, 10), (12, 15)])
 
+    def test_joined_clips_keep_the_outer_fades(self):
+        project = ir((0, 4), (6, 10), (12, 15))
+        first, second = project["tracks"][0]["clips"][:2]
+        first.update(fade_in={"picture": 1.0}, fade_out={"sound": 1.0})
+        second["fade_out"] = {"picture": 2.0}
+        joined = run(project, op("restore", 4, 6))["tracks"][0]["clips"][0]
+        self.assertEqual((joined["fade_in"], joined["fade_out"]), ({"picture": 1.0}, {"picture": 2.0}))
+
     def test_restoring_part_of_a_gap_lands_in_recording_order(self):
         result = run(self.BASE, op("restore", 10.5, 11.5))
         self.assertEqual(spans(result), [(0, 4), (6, 10), (10.5, 11.5), (12, 15)])

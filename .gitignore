@@ -10,6 +10,9 @@ graphify-out/
 # Normalized working media - regenerable from the original source
 media/
 
+# Thumbnails and caches OpenShot creates beside any project it opens
+*_assets/
+
 # Downloaded ASR models (hundreds of MB) and per-video pipeline output
 models/
 output/

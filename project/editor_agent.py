@@ -139,7 +139,7 @@ Write the plan as JSON to `{plan_path.as_posix()}`, matching the schema below, t
 {build_command}
 ```
 
-That validates the plan and builds the Shotcut project. If it reports errors, fix the plan and run it again.
+That validates the plan and builds the editable project. If it reports errors, fix the plan and run it again.
 
 ## Recording
 

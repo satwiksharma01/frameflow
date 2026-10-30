@@ -32,7 +32,7 @@ become the new baseline; remembering human decisions across many rounds is
 creator memory (Phase 9).
 
 Usage:
-    python -m project.reconcile <project.mlt>
+    python -m project.reconcile <project.osp|project.mlt>
 """
 import argparse
 import os
@@ -263,13 +263,13 @@ def reconcile(last_known: dict | None, current: dict) -> HumanChanges:
 
 
 def main() -> None:
-    from project.parse_mlt import parse_mlt
+    from project.editors import editor_for
     from project.sidecar import read_sidecar
 
     parser = argparse.ArgumentParser(description="Report what changed since Frameflow last wrote a project.")
-    parser.add_argument("mlt")
+    parser.add_argument("project", help="an OpenShot .osp or a Shotcut .mlt")
     args = parser.parse_args()
-    changes = reconcile(read_sidecar(args.mlt), parse_mlt(args.mlt))
+    changes = reconcile(read_sidecar(args.project), editor_for(args.project).parse(args.project))
     for line in changes.lines():
         print(f"  {line}")
 

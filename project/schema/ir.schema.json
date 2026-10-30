@@ -95,6 +95,9 @@
           "items": { "$ref": "#/$defs/effect" }
         },
         "volume_db": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fade_in": { "$ref": "#/$defs/fade" },
+        "fade_out": { "$ref": "#/$defs/fade" },
         "text": { "type": "string" },
         "style": { "type": "string" },
         "generator": {
@@ -128,6 +131,16 @@
         },
         "scale": { "type": "number", "exclusiveMinimum": 0 },
         "rotation": { "type": "number" }
+      }
+    },
+    "fade": {
+      "type": "object",
+      "description": "Seconds the picture and the sound take to fade from or to nothing at this edge of the clip.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "picture": { "type": "number", "exclusiveMinimum": 0 },
+        "sound": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "effect": {

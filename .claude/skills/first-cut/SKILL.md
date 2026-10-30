@@ -5,7 +5,7 @@ description: Make a first cut of a raw video recording with Frameflow, acting as
 
 # First cut, with you as the editor
 
-Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the Shotcut project). You make the editorial decisions.
+Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the OpenShot project). You make the editorial decisions. If the user asks for a Shotcut project, add `--editor shotcut` to both commands.
 
 1. **Prepare.** Run from the repository root:
 
@@ -25,4 +25,4 @@ Frameflow handles the mechanical work (frame-rate normalization, transcription, 
 
    If it reports problems with the plan, fix `edit_plan.json` and run the build again until it succeeds.
 
-4. **Report.** Tell the user the kept duration against the original, and list each removed span with its reason, so they know what to review in Shotcut. Lead with the decisions you marked `"confidence": "low"` - those are what they should check first, and the build prints them back for the same reason.
+4. **Report.** Tell the user the kept duration against the original, and list each removed span with its reason, so they know what to review in OpenShot. Lead with the decisions you marked `"confidence": "low"` - those are what they should check first, and the build prints them back for the same reason.

@@ -20,6 +20,7 @@ from project.sidecar import read_sidecar, sidecar_path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SHOTCUT_SAVED = REPO_ROOT / "examples" / "shotcut-saved-two-track.mlt"
 MAIN_MEDIA = REPO_ROOT / "media" / "meet-recording-cfr30.mp4"
+SECOND_MEDIA = REPO_ROOT / "media" / "synthetic-talk.mp4"
 
 WORDS = [{"start": 0.1, "end": 0.5, "text": "Hello"}, {"start": 0.5, "end": 0.9, "text": "there."},
          {"start": 2.0, "end": 2.4, "text": "This"}, {"start": 2.4, "end": 2.9, "text": "part"},
@@ -150,6 +151,90 @@ class TestEditingAProject(unittest.TestCase):
         self.assertEqual(after["tracks"][1]["type"], "broll")
         self.assertFalse(reconcile(read_sidecar(self.mlt), after).any)          # new baseline
         self.assertEqual(len(list((self.folder / "history").glob("*.mlt"))), 1)
+
+
+class TestEditingAnOpenShotProject(unittest.TestCase):
+    """The same loop on the default editor's project: a first cut as Frameflow
+    writes it for OpenShot, with B-roll above the main track."""
+
+    def setUp(self):
+        from project.openshot_template import profile_dirs
+        if not (MAIN_MEDIA.exists() and SECOND_MEDIA.exists()):
+            self.skipTest("media not present")
+        if not profile_dirs():
+            self.skipTest("OpenShot's profiles not found; is OpenShot installed?")
+        from project.compile_osp import compile_file
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.folder = Path(self.tmp.name)
+
+        def clip(clip_id, source, source_in, start, duration):
+            return {"id": clip_id, "source": source.resolve().as_posix(), "source_in": source_in,
+                    "source_out": source_in + duration, "timeline_start": start,
+                    "timeline_duration": duration}
+
+        ir = {"schema_version": "0.2.0",
+              "project": {"name": "project", "width": 1920, "height": 1080, "fps": 30,
+                          "source_frame_rate_mode": "cfr"},
+              "tracks": [{"id": "V1", "type": "video", "clips": [
+                             clip("clip1", MAIN_MEDIA, 0.0, 0.0, 5.0),
+                             clip("clip2", MAIN_MEDIA, 5.0, 5.0, 5.0)]},
+                         {"id": "V2", "type": "broll", "clips": [
+                             clip("clip1", SECOND_MEDIA, 0.0, 3.0, 3.0)]}]}
+        ir_path = self.folder / "project.ir.json"
+        ir_path.write_text(json.dumps(ir), encoding="utf-8")
+        self.osp = compile_file(ir_path, self.folder / "project.osp")
+        (self.folder / "timing.json").write_text(json.dumps({
+            "source": MAIN_MEDIA.resolve().as_posix(), "duration_seconds": 25.7,
+            "words": [{"start": 1.0, "end": 2.0, "text": "Hello."}],
+            "pauses": [{"start": 2.1, "end": 2.9}, {"start": 3.4, "end": 4.2}]}), encoding="utf-8")
+
+    def test_a_change_lands_and_becomes_the_new_baseline(self):
+        from project.parse_osp import parse_osp
+        result = apply_change(load(self.osp), {"summary": "tighten", "operations": [
+            {"action": "remove", "start": 2.5, "end": 3.8, "reason": "tighten",
+             "source": MAIN_MEDIA.name}]}, verify=False)
+        self.assertEqual(result, self.osp)
+
+        after = parse_osp(self.osp)
+        main = [(c["source_in"], c["source_out"]) for c in after["tracks"][0]["clips"]]
+        self.assertEqual(main[:2], [(0.0, 2.333333), (3.933333, 5.0)])
+        self.assertEqual([t["id"] for t in after["tracks"]], ["V1", "V2"])      # B-roll track kept
+        self.assertEqual(after["tracks"][1]["type"], "broll")
+        self.assertFalse(reconcile(read_sidecar(self.osp), after).any)          # new baseline
+        self.assertEqual(len(list((self.folder / "history").glob("*.osp"))), 1)
+
+    def test_a_cut_inside_a_faded_clip_keeps_each_fade_on_its_outer_edge(self):
+        """Fade In and Out on clip 1 (0-5s); removing 2.5-3.8s splits it in two."""
+        from project.openshot_template import keyframe
+        from project.parse_osp import parse_osp
+        data = json.loads(self.osp.read_text(encoding="utf-8"))
+        data["clips"][0]["alpha"] = {"Points": keyframe(0.0)["Points"] + keyframe(1.0, x=31)["Points"]
+                                     + keyframe(1.0, x=121)["Points"] + keyframe(0.0, x=151)["Points"]}
+        self.osp.write_text(json.dumps(data), encoding="utf-8")
+        apply_change(load(self.osp), {"summary": "tighten", "operations": [
+            {"action": "remove", "start": 2.5, "end": 3.8, "reason": "tighten",
+             "source": MAIN_MEDIA.name}]}, verify=False)
+        left, right = parse_osp(self.osp)["tracks"][0]["clips"][:2]
+        self.assertEqual((left.get("fade_in"), left.get("fade_out")), ({"picture": 1.0}, None))
+        self.assertEqual((right.get("fade_in"), right.get("fade_out")), (None, {"picture": 1.0}))
+
+    def test_an_edit_that_would_lose_a_hand_drawn_curve_stops_and_names_it(self):
+        from project.openshot_template import keyframe
+        data = json.loads(self.osp.read_text(encoding="utf-8"))
+        data["clips"][0]["alpha"] = {"Points": keyframe(1.0)["Points"] + keyframe(0.2, x=60)["Points"]
+                                     + keyframe(1.0, x=120)["Points"]}
+        self.osp.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(EditError) as cm:
+            load(self.osp)
+        self.assertIn("changed alpha on clip 1 on V1", str(cm.exception))
+        self.assertIn("Remove them in OpenShot", str(cm.exception))
+
+    def test_a_project_from_an_editor_frameflow_does_not_know_is_refused(self):
+        other = self.folder / "project.kdenlive"
+        other.write_text("<mlt/>", encoding="utf-8")
+        with self.assertRaises(EditError):
+            load(other)
 
 
 if __name__ == "__main__":

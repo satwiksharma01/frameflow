@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Create a first cut: raw video in, Shotcut project out.
+"""Create a first cut: raw video in, editable project out.
 
     prepare: video -> frame-rate check (normalize VFR to CFR)
                    -> transcript + measured silences
     edit:    an editor decides keep/remove for every span
-    build:   edit plan, validated -> IR -> MLT project (+ sidecar)
-                   -> engine check -> [open in Shotcut]
+    build:   edit plan, validated -> IR -> OpenShot project (+ sidecar)
+                   -> listen to every cut -> [open in OpenShot]
+
+`--editor shotcut` builds a Shotcut project instead, checked in the MLT engine.
 
 Two ways to run the edit step:
 
@@ -27,12 +29,9 @@ inspected, and the editor's reason for every keep/remove decision is kept.
 """
 import argparse
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
-from project.compile_mlt import compile_file
 from project.editor_agent import (
     NoSpeechError,
     build_agent_request,
@@ -40,8 +39,9 @@ from project.editor_agent import (
     ensure_speech,
     propose_edit_plan,
 )
-from project.engine_check import check_with_melt
+from project.editors import DEFAULT, EDITORS, Editor
 from project.media import MediaError, analyze, choose_cfr_rate, normalize_to_cfr
+from project.openshot_template import ProfileError
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
 from project.cutpoints import snap_plan
@@ -71,18 +71,6 @@ def _write_json(path: Path, data: dict) -> None:
 
 def _step(message: str) -> None:
     print(f"==> {message}", flush=True)
-
-
-def _open_in_shotcut(project: Path) -> None:
-    candidates = [Path(r"C:\Program Files\Shotcut\shotcut.exe")]
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        candidates.append(Path(local_app_data) / "Programs" / "Shotcut" / "shotcut.exe")
-    shotcut = next((c for c in candidates if c.exists()), None)
-    if shotcut is None:
-        print(f"    Shotcut not found; open {project} manually")
-        return
-    subprocess.Popen([str(shotcut), str(project)])
 
 
 def prepare(video: Path, out_dir: Path, language: str) -> dict:
@@ -137,7 +125,8 @@ def load_plan(out_dir: Path, transcript: dict) -> dict:
     return plan
 
 
-def build(video: Path, out_dir: Path, plan: dict, verify: bool = True) -> Path:
+def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
+          editor: Editor = EDITORS[DEFAULT]) -> Path:
     transcript = json.loads((out_dir / TRANSCRIPT_FILE).read_text(encoding="utf-8"))
     source = Path(transcript["source"])
     info = analyze(source)
@@ -174,18 +163,19 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True) -> Path:
     )
     ir_path = out_dir / "project.ir.json"
     _write_json(ir_path, ir)
-    project = compile_file(ir_path, out_dir / f"{video.stem}.mlt")
+    project = editor.compile_file(ir_path, out_dir / f"{video.stem}{editor.suffix}")
 
-    _step("Checking the project in the MLT engine")
-    if check_with_melt(project):
-        print("    loaded cleanly")
-    else:
-        print("    melt not found; skipped")
+    if editor.engine_check:
+        _step("Checking the project in the MLT engine")
+        if editor.engine_check(project):
+            print("    loaded cleanly")
+        else:
+            print("    melt not found; skipped")
 
     if verify and timing:
         _step("Listening to every cut")
         try:
-            checks = verify_joins(ir, timing, project)
+            checks = verify_joins(ir, timing, project, render=editor.render_audio)
         except VerificationError as e:
             print(f"    skipped: {e}")
         else:
@@ -199,7 +189,7 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True) -> Path:
 
 def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str | None,
               model: str | None, base_url: str | None, language: str,
-              verify: bool = True) -> Path:
+              verify: bool = True, editor: Editor = EDITORS[DEFAULT]) -> Path:
     provider = get_provider(provider_name, model, base_url)
     transcript = prepare(video, out_dir, language)
 
@@ -208,7 +198,7 @@ def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str 
     _write_json(out_dir / PLAN_FILE, plan)
     if provider.served_by and provider.served_by != provider.model:
         print(f"    served by {provider.served_by} (fallback)")
-    return build(video, out_dir, plan, verify=verify)
+    return build(video, out_dir, plan, verify=verify, editor=editor)
 
 
 def _command(video: Path, out: str | None, *flags: str) -> str:
@@ -232,7 +222,9 @@ def main() -> None:
     parser.add_argument("--base-url", help="API mode: OpenAI-compatible endpoint; or FRAMEFLOW_BASE_URL")
     parser.add_argument("--language", default="auto", help="spoken language code, or 'auto'")
     parser.add_argument("--out", help="output folder (default: output/<video name>)")
-    parser.add_argument("--open", action="store_true", help="open the result in Shotcut")
+    parser.add_argument("--editor", choices=sorted(EDITORS), default=DEFAULT,
+                        help=f"which editor's project to build (default: {DEFAULT})")
+    parser.add_argument("--open", action="store_true", help="open the result in the editor")
     parser.add_argument("--no-verify", action="store_true",
                         help="skip listening to each cut (faster, but a clipped word can slip through)")
     args = parser.parse_args()
@@ -241,13 +233,17 @@ def main() -> None:
     if not video.exists():
         sys.exit(f"no such file: {video}")
     out_dir = Path(args.out) if args.out else REPO_ROOT / "output" / video.stem
+    editor = EDITORS[args.editor]
+    # The build the agent is told to run must make the same editor's project.
+    editor_flags = [] if args.editor == DEFAULT else ["--editor", args.editor]
 
     try:
         if args.prepare:
             transcript = prepare(video, out_dir, args.language)
             request = out_dir / REQUEST_FILE
             request.write_text(build_agent_request(
-                transcript, args.brief, out_dir / PLAN_FILE, _command(video, args.out, "--build"),
+                transcript, args.brief, out_dir / PLAN_FILE,
+                _command(video, args.out, "--build", *editor_flags),
             ), encoding="utf-8")
             print(f"\nEdit request: {request}")
             print(f"Next: have your agent follow it and write {out_dir / PLAN_FILE}, then run --build.")
@@ -259,16 +255,18 @@ def main() -> None:
                 sys.exit(f"no transcript at {transcript_path}; run with --prepare first")
             transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
             project = build(video, out_dir, load_plan(out_dir, transcript),
-                            verify=not args.no_verify)
+                            verify=not args.no_verify, editor=editor)
         else:
             project = first_cut(video, out_dir, args.brief, args.provider, args.model,
-                                args.base_url, args.language, verify=not args.no_verify)
-    except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError) as e:
+                                args.base_url, args.language, verify=not args.no_verify,
+                                editor=editor)
+    except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError,
+            ProfileError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 
     print(f"\nFirst cut: {project}")
     if args.open:
-        _open_in_shotcut(project)
+        editor.open(project)
 
 
 if __name__ == "__main__":

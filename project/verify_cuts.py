@@ -14,6 +14,12 @@ Two details that matter, both learned the hard way:
   - Each join is transcribed as its own short clip. Transcribing a long render
     in one pass makes Whisper loop and repeat whole passages, which looks
     exactly like a duplicated clip.
+
+An OpenShot project is rendered by libopenshot, OpenShot's own engine, run
+without a window through Frameflow's build of OpenShot (openshot_build). Only
+where OpenShot is not installed is it heard as its file states it: FFmpeg
+mixes the main track at the timings read back from the .osp, which catches a
+cut placed mid-word but not anything OpenShot adds at a clip boundary.
 """
 import difflib
 import re
@@ -23,9 +29,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from project import openshot_build
 from project.engine_check import find_melt
 from project.media import _find_tool
-from project.transcribe import find_model, find_whisper_cli, run_whisper
+from project.parse_osp import parse_osp
+from project.transcribe import TranscriptionError, find_model, find_whisper_cli, run_whisper
 
 # Seconds of rendered audio to listen to either side of a join.
 CONTEXT_SECONDS = 2.5
@@ -109,6 +117,43 @@ def render_audio(mlt_path: Path | str, out_wav: Path | str) -> Path:
     return Path(out_wav)
 
 
+def render_track_audio(clips: list[dict], out_wav: Path | str) -> Path:
+    """Mix one track's clips at their timeline positions, gaps left silent."""
+    if not clips:
+        raise VerificationError("the main track has no clips to render")
+    sources = list(dict.fromkeys(c["source"] for c in clips))
+    inputs = [arg for source in sources for arg in ("-i", source)]
+    parts = [
+        f"[{sources.index(c['source'])}:a]atrim={c['source_in']:.6f}:{c['source_out']:.6f},"
+        f"asetpts=PTS-STARTPTS,adelay={round(c['timeline_start'] * 1000)}:all=1[a{n}]"
+        for n, c in enumerate(clips)
+    ]
+    # One track's clips never overlap, so summing them unscaled is just placing them.
+    mix = "".join(f"[a{n}]" for n in range(len(clips))) + \
+        f"amix=inputs={len(clips)}:normalize=0:dropout_transition=0[out]"
+    result = subprocess.run(
+        [_find_tool("ffmpeg"), "-y", "-v", "error", *inputs,
+         "-filter_complex", ";".join(parts + [mix]), "-map", "[out]",
+         "-ac", "1", "-ar", "16000", str(out_wav)],
+        capture_output=True, text=True, errors="replace", timeout=3600,
+    )
+    if not Path(out_wav).exists():
+        raise VerificationError(f"rendering the project's audio failed: {result.stderr[-2000:]}")
+    return Path(out_wav)
+
+
+def render_osp_audio(osp_path: Path | str, out_wav: Path | str) -> Path:
+    if openshot_build.install_dir() is None:
+        return render_track_audio(parse_osp(osp_path)["tracks"][0]["clips"], out_wav)
+    osp_path = Path(osp_path).resolve()
+    result = openshot_build.run_script(Path(__file__).parent / "openshot_render.py",
+                                       str(osp_path), str(Path(out_wav).resolve()), "--main-track",
+                                       cwd=osp_path.parent)
+    if result.returncode != 0 or not Path(out_wav).exists():
+        raise VerificationError(f"OpenShot could not render the project's audio: {result.stderr[-2000:]}")
+    return Path(out_wav)
+
+
 def _hear(wav: Path, start: float, end: float, model: Path, tmp: Path) -> str:
     clip = tmp / "join.wav"
     subprocess.run(
@@ -121,24 +166,30 @@ def _hear(wav: Path, start: float, end: float, model: Path, tmp: Path) -> str:
     return " ".join(seg.get("text", "").strip() for seg in whisper.get("transcription", []))
 
 
-def verify_joins(ir: dict, timing: dict, mlt_path: Path | str,
+def verify_joins(ir: dict, timing: dict, project_path: Path | str,
                  model: Path | str | None = None,
                  context: float = CONTEXT_SECONDS,
-                 include: Callable[[dict, dict], bool] | None = None) -> list[JoinCheck]:
+                 include: Callable[[dict, dict], bool] | None = None,
+                 render: Callable[[Path | str, Path | str], Path] = render_audio) -> list[JoinCheck]:
     """Render the project and check the words either side of every cut survived.
 
     `include(left, right)` limits the check to some joins - an edit that makes
     two new cuts should not spend a Whisper pass on each of the thirty it left alone.
+    `render` is the project's editor's: melt for Shotcut, render_osp_audio for OpenShot.
     """
-    find_whisper_cli()  # fail fast with a clear message if it is missing
-    model_path = find_model(model)
+    try:
+        find_whisper_cli()  # fail fast with a clear message if it is missing
+        model_path = find_model(model)
+    except TranscriptionError as e:
+        # The project is already built; a missing tool means "not listened to", not "failed".
+        raise VerificationError(str(e)) from e
     clips = ir["tracks"][0]["clips"]
     words = timing["words"]
     checks: list[JoinCheck] = []
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        rendered = render_audio(mlt_path, tmp_path / "rendered.wav")
+        rendered = render(project_path, tmp_path / "rendered.wav")
 
         for i, (left, right) in enumerate(zip(clips, clips[1:]), start=1):
             joined_at = left["timeline_start"] + left["timeline_duration"]
