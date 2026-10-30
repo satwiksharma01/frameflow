@@ -296,6 +296,51 @@ def apply(ir: dict, operations: list[Operation]) -> tuple[dict, list[str]]:
     return new, problems
 
 
+def add_graphics(ir: dict, graphics: list[dict]) -> list[str]:
+    """Put each graphic on the Graphics track, where its moment of the recording
+    plays in the cut. Changes `ir` in place; returns what was wrong instead."""
+    main = ir["tracks"][main_index(ir)]["clips"]
+    track = next((t for t in ir["tracks"] if t["type"] == "graphics"), None)
+    if track is None:
+        track = {"id": "Graphics", "type": "graphics", "clips": []}
+        ir["tracks"].append(track)
+    problems = []
+    for n, g in enumerate(graphics, start=1):
+        label = f"graphic {n} (at {g['at']}s)"
+        if "text" not in g and "composition" not in g:
+            problems.append(f"{label}: give it text, or a composition")
+            continue
+        hits = [c for c in main if c["source_in"] <= g["at"] < c["source_out"]
+                and ("source" not in g or Path(c["source"]).name == Path(g["source"]).name)]
+        if len({source_key(c["source"]) for c in hits}) > 1:
+            problems.append(f"{label}: more than one recording is in the cut at that time; name one in \"source\"")
+            continue
+        if not hits:
+            problems.append(f"{label}: that moment of the recording is not in the cut")
+            continue
+        start = round(hits[0]["timeline_start"] + g["at"] - hits[0]["source_in"], 6)
+        end = start + g["duration"]
+        clash = [c for c in track["clips"]
+                 if c["timeline_start"] < end and start < c["timeline_start"] + c["timeline_duration"]]
+        if clash:
+            problems.append(f"{label}: it would overlap the graphic already at "
+                            f"{clash[0]['timeline_start']:.2f}s on the timeline; move or shorten it")
+            continue
+        clip = {"id": f"clip{len(track['clips']) + 1}", "timeline_start": start,
+                "timeline_duration": g["duration"], "generator": "hyperframes"}
+        if "text" in g:
+            clip["text"] = g["text"]
+        if "composition" in g:
+            clip["generator_params"] = {"composition": g["composition"]}
+        track["clips"].append(clip)
+    track["clips"].sort(key=lambda c: c["timeline_start"])
+    for n, clip in enumerate(track["clips"], start=1):
+        clip["id"] = f"clip{n}"
+    if not track["clips"]:
+        ir["tracks"].remove(track)
+    return problems
+
+
 def check(doc: dict, ir: dict, changes: HumanChanges,
           pauses: dict[str, list[dict]] | None = None,
           durations: dict[str, float] | None = None) -> list[str]:
@@ -303,4 +348,5 @@ def check(doc: dict, ir: dict, changes: HumanChanges,
     operations, problems = resolve(doc, ir, changes, pauses, durations)
     if problems:
         return problems
-    return apply(ir, operations)[1]
+    new, problems = apply(ir, operations)
+    return problems + add_graphics(new, doc.get("graphics", []))

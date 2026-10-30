@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from project.cutpoints import PAD_SECONDS, frame_align
-from project.operations import apply, check, resolve
+from project.operations import add_graphics, apply, check, resolve
 from project.parse_mlt import parse_mlt
 from project.reconcile import HumanChanges, reconcile, source_key
 from project.sidecar import read_sidecar
@@ -238,6 +238,45 @@ class TestSources(unittest.TestCase):
         before = copy.deepcopy(base)
         run(base, op("remove", 1, 2))
         self.assertEqual(base, before)
+
+
+class TestGraphics(unittest.TestCase):
+    BASE = ir((0, 4), (6, 10))          # 0-4s of the recording, then 6-10s from 4s on the timeline
+
+    def graphic(self, at, duration=2.0, **extra):
+        return {"at": at, "duration": duration, "reason": "test", "text": "Hello", **extra}
+
+    def test_a_graphic_appears_where_its_moment_plays(self):
+        project = copy.deepcopy(self.BASE)
+        self.assertEqual(add_graphics(project, [self.graphic(7.0)]), [])
+        track = project["tracks"][-1]
+        self.assertEqual((track["id"], track["type"]), ("Graphics", "graphics"))
+        self.assertEqual(track["clips"], [{"id": "clip1", "timeline_start": 5.0, "timeline_duration": 2.0,
+                                           "generator": "hyperframes", "text": "Hello"}])
+        validate(project, "ir")
+
+    def test_a_moment_that_was_cut_is_reported(self):
+        project = copy.deepcopy(self.BASE)
+        self.assertIn("not in the cut", add_graphics(project, [self.graphic(5.0)])[0])
+        self.assertEqual(len(project["tracks"]), 1)     # no empty Graphics track left behind
+
+    def test_overlapping_graphics_are_reported(self):
+        project = copy.deepcopy(self.BASE)
+        problems = add_graphics(project, [self.graphic(1.0), self.graphic(2.0)])
+        self.assertIn("overlap", problems[0])
+
+    def test_graphics_land_after_the_operations(self):
+        """Removing 1-3s pulls a graphic at 3.5s of the recording to 1.5s on the timeline."""
+        doc = op("remove", 1, 3)
+        doc["graphics"] = [self.graphic(3.5, duration=1.0)]
+        self.assertEqual(check(doc, self.BASE, UNCHANGED), [])
+        result = run(self.BASE, doc)
+        add_graphics(result, doc["graphics"])
+        self.assertAlmostEqual(result["tracks"][-1]["clips"][0]["timeline_start"], 1.5, places=1)
+
+    def test_a_graphic_needs_text_or_a_composition(self):
+        bare = {"at": 1.0, "duration": 1.0, "reason": "test"}
+        self.assertIn("text, or a composition", add_graphics(copy.deepcopy(self.BASE), [bare])[0])
 
 
 if __name__ == "__main__":

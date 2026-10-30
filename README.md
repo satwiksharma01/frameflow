@@ -19,6 +19,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 **What it will not do quietly:**
 - **Cut mid-word without saying so.** Every cut point is moved into a measured pause. If the only pause is too short for a clean cut at your frame rate, a first cut warns you at build time, and a change refuses it so the editor picks a better boundary.
 - **Ship a cut without listening to it.** After building, the project's audio is rendered and every join is transcribed again, to check the words either side survived. An OpenShot project is rendered by OpenShot's own engine, run without a window (FFmpeg stands in when OpenShot is not installed); a Shotcut project is rendered by Shotcut's own engine.
+- **Add graphics that stay editable.** Ask for a title, caption, lower third or product card and it is rendered by HyperFrames with a transparent background onto its own Graphics track, anchored to the moment it's said. In your editor it's an ordinary clip you can move, trim or delete.
 - **Change what's on screen.** When the project is open in Frameflow's build of OpenShot, a change appears in the window as you watch, and one Ctrl+Z there undoes it. Unsaved work in that window is saved before Frameflow reads the project. See [docs/findings.md](docs/findings.md) for how the integration works.
 - **Throw away your work.** If a change would lose something Frameflow can't carry — an effect, a fade, a speed change, a title — it stops and names it instead of discarding it.
 
@@ -31,6 +32,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 | **FFmpeg** | `ffmpeg` and `ffprobe`, on `PATH` or in `%LOCALAPPDATA%\Programs\ffmpeg\bin` |
 | **whisper-cli** | whisper.cpp's transcriber: `whisper-bin-x64.zip` from [whisper.cpp's releases](https://github.com/ggml-org/whisper.cpp/releases), with `whisper-cli` on `PATH` or named by `FRAMEFLOW_WHISPER_CLI`. Shotcut bundles it too, and Frameflow finds that copy if Shotcut is installed |
 | **Whisper model** | `ggml-large-v3-turbo-q5_0.bin` (548 MB) from the [whisper.cpp model repository](https://huggingface.co/ggerganov/whisper.cpp), saved into `models/` |
+| **Node.js** | 22 or newer, for graphics: Frameflow runs [HyperFrames](https://github.com/heygen-com/hyperframes) 0.8.199 through `npx` to render titles, captions and cards |
 | **Shotcut** (optional) | 26.x, only for `--editor shotcut`. Its `melt` engine checks and renders Shotcut projects |
 
 ```bash

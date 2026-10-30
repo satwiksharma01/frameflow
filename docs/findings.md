@@ -155,6 +155,62 @@ files alone, as before.
 - A fade written by Frameflow, played back in OpenShot.
 - Shotcut paths (melt is not installed here).
 
+## HyperFrames: graphics as editable clips
+
+HyperFrames (heygen-com/hyperframes, run as `npx hyperframes@0.8.199`) renders
+HTML into video. Frameflow uses it for titles, captions, lower thirds and
+product cards, never for the whole video, so the project stays editable.
+
+- An edit's `graphics` list adds them: each has text (or a HyperFrames project
+  folder, `composition`, for anything else), a moment in the recording and a
+  duration. The moment is mapped through the cut, so the graphic appears when
+  that is said; a moment that was cut out, or a graphic that would overlap
+  another, is sent back to fix.
+- `project/hyperframes.py` renders each to a transparent ProRes 4444 `.mov`
+  (`--format mov`, yuva444p12le) in the project's `graphics/` folder, cached
+  by content, before the project is written. The clip then sits on a Graphics
+  track above the footage like any other media.
+- The built-in text card animates without GSAP. HyperFrames seeks whatever
+  object is in `window.__timelines`, and GSAP's own license is not one Frameflow
+  can ship under, so the card drives its fade and rise with a small timeline
+  object of its own.
+- HyperFrames refuses a frame rate written as `30.0`; Frameflow passes `30` or
+  an exact fraction like `30000/1001`.
+- Checked by eye in OpenShot: a card added to an open project appeared on a
+  new Graphics track and played over the footage, transparent around it.
+
+Not yet: graphics in a first cut (today they come from an edit), captions
+generated from the transcript word by word, and audio from a composition
+(rendered `.mov` files are picture only).
+
+## The content workflow (agreed, not built yet)
+
+One prompt in: what the creator wants, plus an optional script, raw footage
+and assets. The video does not have to show the creator's face. Stages: brief
+→ script → storyboard (each scene picks its source: footage, graphic, asset,
+generated media, voiceover) → make the pieces → assemble into the editable
+project → check and refine.
+
+Two kinds of capability:
+
+- **Skills are a library, not wiring.** Content skills (hooks, scripts,
+  platform playbooks, caption styles) sit in one folder with a description
+  each. For every video the AI writes a plan naming the skills it will use and
+  why, and the creator can change it. A per-user profile (brand voice, skills
+  always or never used) personalises it. The creator will share their skills
+  later.
+- **Features are built-in engines** with a fixed contract, registered in a
+  table like the editors: first cut, HyperFrames graphics, a "make it like
+  this reference video" engine, and later voiceover and music.
+
+The reference-video engine will be the creator's own rebuild of Hypit's idea,
+written from scratch. Hypit itself (hypit-ai/hypit) is under a modified Apache
+2.0 that forbids bundling it in a product sold to others or hosting it for
+other people without a commercial license. A from-scratch rebuild avoids that,
+as long as no Hypit code is copied into it. How Frameflow uses the engine will
+be decided once it exists; the key question is whether it hands over separate
+layers that land on separate tracks rather than one flat render.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

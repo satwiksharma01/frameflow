@@ -36,7 +36,8 @@ from project.editors import PARSE_ERRORS, editor_for
 from project.engine_check import EngineCheckError
 from project.first_cut import TIMING_FILE, _step, _write_json
 from project.openshot_template import ProfileError
-from project.operations import apply, check, main_index, resolve
+from project.hyperframes import HyperFramesError, render_generated
+from project.operations import add_graphics, apply, check, main_index, resolve
 from project.providers import ProviderError, get_provider
 from project.reconcile import HumanChanges, reconcile, source_key
 from project.sidecar import read_sidecar, sidecar_path
@@ -145,14 +146,20 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     operations, problems = resolve(doc, project.ir, project.changes, pauses, durations)
     new_ir, apply_problems = apply(project.ir, operations) if not problems else (None, [])
     problems += apply_problems
+    graphics = doc.get("graphics", [])
+    if not problems:
+        problems += add_graphics(new_ir, graphics)
     if problems:
         raise EditError("the operations need fixing:\n" + "\n".join(f"  {p}" for p in problems))
 
     print(f"    {doc['summary']}")
-    if not operations:
+    if not operations and not graphics:
         print("    No changes made; the project is untouched.")
         return None
 
+    if graphics:
+        _step("Rendering graphics with HyperFrames")
+        render_generated(new_ir, project.folder)
     editor = editor_for(project.path)
     kept = backup(project.path)
     ir_path = project.folder / IR_FILE
@@ -179,12 +186,16 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
         print(f"    {op.describe()}")
         for note in op.notes:
             print(f"      ! {note}")
+    for g in graphics:
+        print(f"    added {g.get('text') or g['composition']!r} at {g['at']:.2f}s for "
+              f"{g['duration']:.1f}s: {g['reason']}")
     if project.discarded:
         print(f"    discarded, as asked (the previous version still has them): "
               f"{'; '.join(project.discarded)}")
-    main = main_index(new_ir)
-    others = sum(len(t["clips"]) for i, t in enumerate(new_ir["tracks"]) if i != main)
-    if others:
+    main = main_index(project.ir)
+    # Clips that were there before this change; graphics just added are placed on the new cut.
+    others = sum(len(t["clips"]) for i, t in enumerate(project.ir["tracks"]) if i != main)
+    if others and operations:
         print(f"    ! {others} clip(s) on other tracks kept their positions; check they still "
               f"line up with the main track")
     print(f"    previous version: {kept}")
@@ -273,7 +284,7 @@ def main() -> None:
 
         _step("Applying")
         result = apply_change(project, doc, verify=not args.no_verify)
-    except (EditError, ProviderError, EngineCheckError, ProfileError) as e:
+    except (EditError, ProviderError, EngineCheckError, ProfileError, HyperFramesError) as e:
         sys.exit(f"\n{e}")
 
     if result:

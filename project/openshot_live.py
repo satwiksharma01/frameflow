@@ -32,15 +32,23 @@ def request(command: str, **fields) -> dict | None:
     return answer
 
 
-def _is_open(project: Path) -> bool:
+def _open_status(project: Path) -> dict | None:
+    """The window's status, if this project is the one open in it."""
     status = request("status")
-    return bool(status and status.get("project")
-                and os.path.normcase(Path(status["project"]).resolve()) == os.path.normcase(project.resolve()))
+    if status and status.get("project") and (
+            os.path.normcase(Path(status["project"]).resolve()) == os.path.normcase(Path(project).resolve())):
+        return status
+    return None
+
+
+def _is_open(project: Path) -> bool:
+    return _open_status(project) is not None
 
 
 def save_if_open(project: Path) -> bool:
     """Save the creator's unsaved work first, so Frameflow reads what they see."""
-    if not _is_open(project):
+    status = _open_status(project)
+    if not (status and status.get("unsaved")):
         return False
     request("save")
     return True

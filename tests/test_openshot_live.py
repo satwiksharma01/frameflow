@@ -97,6 +97,12 @@ class TestLiveClient(unittest.TestCase):
         self.assertFalse(self.live.update(Path(self.tmp.name) / "mine.osp"))
         self.assertEqual([r["cmd"] for r in received], ["status"])
 
+    def test_a_window_with_nothing_unsaved_is_not_saved(self):
+        mine = Path(self.tmp.name) / "mine.osp"
+        received = self.serve({"ok": True, "project": str(mine), "unsaved": False})
+        self.assertFalse(self.live.save_if_open(mine))
+        self.assertEqual([r["cmd"] for r in received], ["status"])
+
     def test_a_refusal_is_raised(self):
         self.serve({"ok": False, "error": "the open project has never been saved"})
         with self.assertRaises(RuntimeError):

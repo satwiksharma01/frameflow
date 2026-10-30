@@ -44,6 +44,35 @@
           }
         }
       }
+    },
+    "graphics": {
+      "type": "array",
+      "description": "Optional. Graphics to add over the cut - a title, a caption, a lower third, a product card - each rendered by HyperFrames with a transparent background onto its own Graphics track. Applied after the operations. Each is anchored to a moment in the recording, so it appears when that is said.",
+      "items": {
+        "type": "object",
+        "required": ["at", "duration", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The words on a text card. Required unless composition is given."
+          },
+          "composition": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional: path to a HyperFrames project folder you wrote (its index.html, transparent background, the project's width and height), for anything a text card cannot do. Rendered as it is."
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File name of the recording `at` refers to. Optional when the main track uses a single recording."
+          },
+          "at": { "type": "number", "minimum": 0, "description": "Seconds into the recording where the graphic appears; it must be in the cut." },
+          "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Seconds on screen." },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
     }
   }
 }

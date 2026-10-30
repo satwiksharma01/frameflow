@@ -7,6 +7,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -203,6 +204,26 @@ class TestEditingAnOpenShotProject(unittest.TestCase):
         self.assertEqual(after["tracks"][1]["type"], "broll")
         self.assertFalse(reconcile(read_sidecar(self.osp), after).any)          # new baseline
         self.assertEqual(len(list((self.folder / "history").glob("*.osp"))), 1)
+
+    def test_a_graphic_lands_on_its_own_track(self):
+        """A card at 6s of the recording plays at 6s on the timeline (clip 2 runs 5-10s)."""
+        from project import hyperframes
+        from project.parse_osp import parse_osp
+        caption = REPO_ROOT / "media" / "caption.mov"
+        if not caption.exists():
+            self.skipTest("media not present")
+        render = lambda composition, out, fps: Path(shutil.copy(caption, out))
+        with mock.patch.object(hyperframes, "render", render):
+            apply_change(load(self.osp), {"summary": "title", "operations": [], "graphics": [
+                {"at": 6.0, "duration": 2.0, "text": "Hello", "reason": "title",
+                 "source": MAIN_MEDIA.name}]}, verify=False)
+        after = parse_osp(self.osp)
+        graphics = after["tracks"][-1]
+        self.assertEqual((graphics["id"], graphics["type"]), ("Graphics", "graphics"))
+        clip = graphics["clips"][0]
+        self.assertEqual((clip["timeline_start"], clip["timeline_duration"]), (6.0, 2.0))
+        self.assertEqual(Path(clip["source"]).parent, self.folder / "graphics")
+        self.assertEqual(len(after["tracks"][0]["clips"]), 2)        # the cut is untouched
 
     def test_a_cut_inside_a_faded_clip_keeps_each_fade_on_its_outer_edge(self):
         """Fade In and Out on clip 1 (0-5s); removing 2.5-3.8s splits it in two."""
