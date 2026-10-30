@@ -131,8 +131,13 @@ def render_clip(clip: dict, project: dict, folder: Path) -> Path:
         source = graphics / "cards" / hashlib.sha256(page.encode()).hexdigest()[:16]
         source.mkdir(parents=True, exist_ok=True)
         (source / "index.html").write_text(page, encoding="utf-8")
-    out = graphics / f"{_digest(source, f'{VERSION}|{fps}')}.mov"
-    return out if out.exists() else render(source, out, fps)
+    return render_cached(source, folder, fps)
+
+
+def render_cached(composition: Path, folder: Path, fps: float) -> Path:
+    """A composition rendered into the project's graphics/ folder, unless it already is."""
+    out = folder / GRAPHICS_DIR / f"{_digest(composition, f'{VERSION}|{fps}')}.mov"
+    return out if out.exists() else render(composition, out, fps)
 
 
 def render_generated(ir: dict, folder: Path) -> dict:

@@ -15,8 +15,9 @@ agent mode; each stage writes a request for it and checks what it writes back.
         -> voiceover, graphics, stills as clips -> IR -> OpenShot project
 
 The project has the picture on the main track (V1), titles and compositions
-on Graphics, captions on Captions, then Voice and Music as audio tracks. It is
-an ordinary Frameflow project afterwards: edit it by hand, or with project.edit.
+on Graphics, captions on Captions (fixed text, or what is said popping in word
+by word), then Voice and Music as audio tracks. It is an ordinary Frameflow
+project afterwards: edit it by hand, or with project.edit.
 """
 import argparse
 import hashlib
@@ -24,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import first_cut, hyperframes, voiceover
+from project import captions, first_cut, hyperframes, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import MediaError, analyze, probe, still_to_clip
@@ -193,6 +194,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
+- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
 
   ```
@@ -261,7 +263,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     fps = brief.get("fps") or (round(analyze(inputs["footage"][0]["source"]).nominal_fps)
                                if inputs["footage"] else 30)
     voice_name = board.get("voice")
-    main, graphics, captions, voice = [], [], [], []
+    main, graphics, fixed_captions, voice, said = [], [], [], [], []
     cursor, problems = 0.0, []
 
     for n, scene in enumerate(board["scenes"], start=1):
@@ -269,7 +271,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
         spoken = None
         if "narration" in scene:
             wav = _cached(folder, "voice", f"{voice_name}|{scene['narration']}", ".wav")
-            if not wav.exists():
+            if not wav.exists() or not wav.with_suffix(".json").exists():
                 voiceover.speak(scene["narration"], wav, voice_name)
             spoken = (wav, _seconds(wav))
         needed = spoken[1] + VOICE_LEAD_SECONDS + VOICE_TAIL_SECONDS if spoken else 0.0
@@ -312,8 +314,14 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                 clip["volume_db"] = UNDER_NARRATION_DB
             main.append(clip)
         if "caption" in scene:
-            captions.append({"timeline_start": cursor, "timeline_duration": length,
-                             "generator": "hyperframes", "text": scene["caption"]})
+            fixed_captions.append({"timeline_start": cursor, "timeline_duration": length,
+                                   "generator": "hyperframes", "text": scene["caption"]})
+        elif board.get("spoken_captions") and spoken:
+            words = json.loads(spoken[0].with_suffix(".json").read_text(encoding="utf-8"))
+            said.append(captions.run(words, 0.0, length - VOICE_LEAD_SECONDS, cursor + VOICE_LEAD_SECONDS))
+        elif board.get("spoken_captions") and visual["type"] == "footage":
+            timing = json.loads((folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))
+            said.append(captions.run(timing["words"], start, end, cursor))
         if spoken:
             voice.append({"source": spoken[0].resolve().as_posix(), "source_in": 0.0,
                           "source_out": spoken[1], "timeline_start": round(cursor + VOICE_LEAD_SECONDS, 6),
@@ -324,7 +332,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
         raise ProduceError("the storyboard needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
 
     tracks = [("V1", "video", main), ("Graphics", "graphics", graphics),
-              ("Captions", "captions", captions), ("Voice", "audio", voice)]
+              ("Captions", "captions", fixed_captions), ("Voice", "audio", voice)]
     if "music" in board:
         m = _match(board["music"]["path"], inputs["music"], "path")
         level = board["music"].get("volume_db", -18.0 if voice else -6.0)
@@ -339,7 +347,10 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
           # Audio tracks go above the picture: the bottom track is the main one.
           "tracks": [{"id": tid, "type": kind,
                       "clips": [{"id": f"clip{i}", **c} for i, c in enumerate(clips, start=1)]}
-                     for tid, kind, clips in tracks if clips or tid == "V1"]}
+                     for tid, kind, clips in tracks if clips or tid == "V1" or (tid == "Captions" and said)]}
+    if said:
+        first_cut._step("Rendering word-by-word captions with HyperFrames")
+        print(f"    {captions.add(ir, said, folder)} lines")
     return ir
 
 

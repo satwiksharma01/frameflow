@@ -5,9 +5,10 @@
                    -> transcript + measured silences
     edit:    an editor decides keep/remove for every span
     build:   edit plan, validated -> IR -> OpenShot project (+ sidecar)
-                   -> listen to every cut -> [open in OpenShot]
+                   -> [captions] -> listen to every cut -> [open in OpenShot]
 
 `--editor shotcut` builds a Shotcut project instead, checked in the MLT engine.
+`--captions` adds captions that pop in word by word, on a Captions track.
 
 Two ways to run the edit step:
 
@@ -32,6 +33,7 @@ import json
 import sys
 from pathlib import Path
 
+from project.captions import add as add_captions, runs_from_cut
 from project.editor_agent import (
     NoSpeechError,
     build_agent_request,
@@ -40,11 +42,13 @@ from project.editor_agent import (
     propose_edit_plan,
 )
 from project.editors import DEFAULT, EDITORS, Editor
+from project.hyperframes import HyperFramesError
 from project.media import MediaError, analyze, choose_cfr_rate, normalize_to_cfr
 from project.openshot_template import ProfileError
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
 from project.cutpoints import snap_plan
+from project.reconcile import source_key
 from project.transcribe import (
     MICRO_PAUSE_MIN_SECONDS,
     TranscriptionError,
@@ -126,7 +130,7 @@ def load_plan(out_dir: Path, transcript: dict) -> dict:
 
 
 def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
-          editor: Editor = EDITORS[DEFAULT]) -> Path:
+          editor: Editor = EDITORS[DEFAULT], captions: bool = False) -> Path:
     transcript = json.loads((out_dir / TRANSCRIPT_FILE).read_text(encoding="utf-8"))
     source = Path(transcript["source"])
     info = analyze(source)
@@ -161,6 +165,13 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
         "cfr" if source.resolve() == video.resolve() else "normalized_from_vfr", video.stem,
         source_duration=info.duration_seconds,
     )
+    if captions:
+        _step("Rendering word-by-word captions with HyperFrames")
+        if timing is None:
+            print(f"    skipped: no {TIMING_FILE}; run --prepare again")
+        else:
+            words = {source_key(timing["source"]): timing["words"]}
+            print(f"    {add_captions(ir, runs_from_cut(ir, words), out_dir)} lines")
     ir_path = out_dir / "project.ir.json"
     _write_json(ir_path, ir)
     project = editor.compile_file(ir_path, out_dir / f"{video.stem}{editor.suffix}")
@@ -189,7 +200,7 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
 
 def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str | None,
               model: str | None, base_url: str | None, language: str,
-              verify: bool = True, editor: Editor = EDITORS[DEFAULT]) -> Path:
+              verify: bool = True, editor: Editor = EDITORS[DEFAULT], captions: bool = False) -> Path:
     provider = get_provider(provider_name, model, base_url)
     transcript = prepare(video, out_dir, language)
 
@@ -198,7 +209,7 @@ def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str 
     _write_json(out_dir / PLAN_FILE, plan)
     if provider.served_by and provider.served_by != provider.model:
         print(f"    served by {provider.served_by} (fallback)")
-    return build(video, out_dir, plan, verify=verify, editor=editor)
+    return build(video, out_dir, plan, verify=verify, editor=editor, captions=captions)
 
 
 def _command(video: Path, out: str | None, *flags: str) -> str:
@@ -224,6 +235,8 @@ def main() -> None:
     parser.add_argument("--out", help="output folder (default: output/<video name>)")
     parser.add_argument("--editor", choices=sorted(EDITORS), default=DEFAULT,
                         help=f"which editor's project to build (default: {DEFAULT})")
+    parser.add_argument("--captions", action="store_true",
+                        help="add captions that pop in word by word as they are said")
     parser.add_argument("--open", action="store_true", help="open the result in the editor")
     parser.add_argument("--no-verify", action="store_true",
                         help="skip listening to each cut (faster, but a clipped word can slip through)")
@@ -235,7 +248,8 @@ def main() -> None:
     out_dir = Path(args.out) if args.out else REPO_ROOT / "output" / video.stem
     editor = EDITORS[args.editor]
     # The build the agent is told to run must make the same editor's project.
-    editor_flags = [] if args.editor == DEFAULT else ["--editor", args.editor]
+    editor_flags = ([] if args.editor == DEFAULT else ["--editor", args.editor]) + \
+        (["--captions"] if args.captions else [])
 
     try:
         if args.prepare:
@@ -255,13 +269,13 @@ def main() -> None:
                 sys.exit(f"no transcript at {transcript_path}; run with --prepare first")
             transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
             project = build(video, out_dir, load_plan(out_dir, transcript),
-                            verify=not args.no_verify, editor=editor)
+                            verify=not args.no_verify, editor=editor, captions=args.captions)
         else:
             project = first_cut(video, out_dir, args.brief, args.provider, args.model,
                                 args.base_url, args.language, verify=not args.no_verify,
-                                editor=editor)
+                                editor=editor, captions=args.captions)
     except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError,
-            ProfileError) as e:
+            ProfileError, HyperFramesError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 
     print(f"\nFirst cut: {project}")

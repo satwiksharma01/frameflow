@@ -27,6 +27,10 @@
         "volume_db": { "type": "number", "maximum": 0, "description": "Optional; -18 under narration and -6 without when absent." }
       }
     },
+    "spoken_captions": {
+      "type": "boolean",
+      "description": "Optional: show what is said as captions that pop in word by word - the narration, or the speech in footage that has no narration. A scene with its own caption shows that instead. Usual for reels and shorts."
+    },
     "scenes": {
       "type": "array",
       "minItems": 1,

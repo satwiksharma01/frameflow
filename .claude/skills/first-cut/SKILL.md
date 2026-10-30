@@ -5,7 +5,7 @@ description: Make a first cut of a raw video recording with Frameflow, acting as
 
 # First cut, with you as the editor
 
-Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the OpenShot project). You make the editorial decisions. If the user asks for a Shotcut project, add `--editor shotcut` to both commands.
+Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the OpenShot project). You make the editorial decisions. If the user asks for a Shotcut project, add `--editor shotcut` to both commands. If they ask for captions or subtitles, add `--captions` to both: what is said pops in word by word on a Captions track.
 
 1. **Prepare.** Run from the repository root:
 

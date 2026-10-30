@@ -225,6 +225,29 @@ class TestEditingAnOpenShotProject(unittest.TestCase):
         self.assertEqual(Path(clip["source"]).parent, self.folder / "graphics")
         self.assertEqual(len(after["tracks"][0]["clips"]), 2)        # the cut is untouched
 
+    def test_captions_move_with_the_cut(self):
+        """A caption at 6s of the recording plays at 6s; after 2.33-3.93s is removed, at 4.4s."""
+        from project.compile_osp import compile_file
+        from project.parse_osp import parse_osp
+        caption = REPO_ROOT / "media" / "caption.mov"
+        if not caption.exists():
+            self.skipTest("media not present")
+        ir_path = self.folder / "project.ir.json"
+        ir = json.loads(ir_path.read_text(encoding="utf-8"))
+        ir["tracks"].append({"id": "Captions", "type": "captions", "clips": [
+            {"id": "clip1", "source": caption.resolve().as_posix(), "source_in": 0.0, "source_out": 1.0,
+             "timeline_start": 6.0, "timeline_duration": 1.0}]})
+        ir_path.write_text(json.dumps(ir), encoding="utf-8")
+        compile_file(ir_path, self.osp)
+
+        apply_change(load(self.osp), {"summary": "tighten", "operations": [
+            {"action": "remove", "start": 2.5, "end": 3.8, "reason": "tighten",
+             "source": MAIN_MEDIA.name}]}, verify=False)
+        after = parse_osp(self.osp)
+        captions = next(t for t in after["tracks"] if t["type"] == "captions")
+        self.assertAlmostEqual(captions["clips"][0]["timeline_start"], 4.4, places=3)
+        self.assertEqual(after["tracks"][1]["clips"][0]["timeline_start"], 3.0)   # B-roll stays put
+
     def test_a_cut_inside_a_faded_clip_keeps_each_fade_on_its_outer_edge(self):
         """Fade In and Out on clip 1 (0-5s); removing 2.5-3.8s splits it in two."""
         from project.openshot_template import keyframe

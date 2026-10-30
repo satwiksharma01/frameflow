@@ -179,9 +179,63 @@ product cards, never for the whole video, so the project stays editable.
 - Checked by eye in OpenShot: a card added to an open project appeared on a
   new Graphics track and played over the footage, transparent around it.
 
-Not yet: graphics in a first cut (today they come from an edit), captions
-generated from the transcript word by word, and audio from a composition
-(rendered `.mov` files are picture only).
+Not yet: graphics in a first cut (today they come from an edit), and audio
+from a composition (rendered `.mov` files are picture only).
+
+## Captions, word by word
+
+`--captions` on a first cut, or `"spoken_captions": true` in a storyboard,
+shows what is said as captions that pop in word by word, with the word being
+said in yellow. `project/captions.py` groups the words into short lines and
+puts them through the cut: a line never crosses a cut, and words from removed
+spans are gone. Every line is a clip on a Captions track, so the creator can
+move, trim or delete one like footage.
+
+- **One render, many clips.** A HyperFrames render spends about 24 s starting
+  up: a 2 s card took 25.8 s and an 8 s card 34.6 s. One render per line
+  would take over an hour for a five-minute video. So every line is drawn back
+  to back in one transparent .mov, and each clip plays its own span of it.
+- **Where the words come from.** For recordings, Whisper's word timings
+  (`timing.json`). They have no punctuation or capitals, so captions are
+  drawn in capitals. For narration, the Windows voice's own progress events,
+  saved beside each .wav: exact, and in the script's own spelling ("$129"
+  stays "$129", where Whisper would write the words it heard).
+- **System.Speech reports word positions as if the audio were 16 kHz**,
+  whatever the file's rate. Measured against the pauses in files written at
+  16, 22.05 and 44.1 kHz; the default file is 22.05 kHz, so positions are
+  scaled by 16000/22050. Corrected, "It's" started at 2.194 s against a
+  measured pause ending at 2.204 s.
+- **Lines**: at most 14 characters on a vertical video, 28 on a landscape
+  one, measured in Arial Black capitals at the size used; a new line after a
+  sentence ends or a pause of 0.35 s; a line stays up 0.3 s after its last
+  word, or until the next line if that comes within 0.5 s. Whisper can stretch
+  one word over seconds of noise, so a word holds its line 1.5 s at most.
+- **Layout**: words not yet said keep their space, so a line doesn't jump
+  sideways as it fills in. On a vertical video, lines sit at 68% of the height,
+  above where the app's buttons and text cover a reel.
+
+Checked on a real recording: a first cut keeping 268 s of 326 s got 173
+lines from one render, in 4 min 26 s. Frames rendered by OpenShot's own
+engine show each line transparent over the footage with the word being said
+in yellow. The cost is size: the render is ProRes 4444, 465 MB for those
+268 s. A codec that stores transparent areas cheaply (QuickTime Animation or
+PNG in .mov) would be far smaller if libopenshot reads it.
+
+**Edits move the captions with the cut.** Each line is anchored to the moment
+of the recording under its start, and moves to where that moment now plays. A
+line whose moment was removed goes; one that now runs into a cut stops there.
+Speech left without a line - put back by the edit, or the surviving end of a
+line that went or was cut short - gets new lines from `timing.json`, in one
+small render. Lines the creator moved, trimmed or deleted by hand are
+followed, kept trimmed, or stay deleted. Checked on the same recording:
+removing a repeated sentence (3.6 s) moved 136 lines, dropped 2 and added 1
+for a word left over, in 13.5 s. The edited audio, rendered by OpenShot's
+engine and transcribed again, matched each line after the cut word for word.
+
+Not yet: captions are not offered in an edit request ("add captions" today
+makes a fixed graphic), and only tracks of captions follow the cut - a title
+or card on the Graphics track keeps its position, since a title meant for the
+opening shouldn't vanish when the first seconds are cut.
 
 ## OpenWhispr: transcription, and talking to Frameflow
 

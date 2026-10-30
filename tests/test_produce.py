@@ -1,4 +1,5 @@
 """Making a video from a prompt: storyboard checks and the project it builds."""
+import json
 import subprocess
 import tempfile
 import unittest
@@ -103,6 +104,27 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertAlmostEqual(song["timeline_duration"], 3.5, places=1)   # cut to the video's length
         self.assertEqual(song["volume_db"], -18.0)                          # under a voice
 
+    def test_spoken_captions_follow_the_narration(self):
+        def speak(text, out, voice=None):
+            out.with_suffix(".json").parent.mkdir(parents=True, exist_ok=True)
+            out.with_suffix(".json").write_text(json.dumps(
+                [{"start": 0.1, "end": 0.5, "text": text.split()[0]}, {"start": 0.5, "end": 1.0, "text": text.split()[1]}]))
+            return _tone(out, 1.0)
+
+        board = {"script": "s", "spoken_captions": True, "scenes": [
+            {"visual": {"type": "title", "text": "Hook"}, "narration": "Meet Nomad", "reason": "r"},
+            {"visual": {"type": "title", "text": "Price"}, "narration": "Only today", "caption": "Sale",
+             "reason": "r"}]}
+        with mock.patch.object(produce.voiceover, "speak", speak), \
+                mock.patch.object(produce.hyperframes, "render", lambda c, out, fps: out):
+            ir = produce.build_ir(self.folder, board, BRIEF, {"footage": [], "assets": [], "music": []})
+        validate(ir, "ir")
+        self.assertEqual([t["id"] for t in ir["tracks"]], ["V1", "Graphics", "Captions", "Voice"])
+        spoken, fixed = ir["tracks"][2]["clips"]
+        self.assertEqual(spoken["text"], "Meet Nomad")                  # the second scene shows its own caption
+        self.assertAlmostEqual(spoken["timeline_start"], produce.VOICE_LEAD_SECONDS + 0.1, places=1)
+        self.assertEqual((fixed["text"], "source" in fixed), ("Sale", False))
+
     def test_narration_longer_than_its_footage_is_reported(self):
         if not FOOTAGE.exists():
             self.skipTest("media not present")
@@ -135,7 +157,6 @@ class TestRequests(unittest.TestCase):
             folder = Path(tmp)
             (folder / produce.INPUTS_FILE).write_text('{"prompt": "p", "script": null, "footage": [], '
                                                       '"assets": [], "music": []}', encoding="utf-8")
-            import json
             (folder / produce.BRIEF_FILE).write_text(json.dumps(dict(BRIEF, open_questions=["Price?"])),
                                                      encoding="utf-8")
             with self.assertRaises(produce.ProduceError) as cm:

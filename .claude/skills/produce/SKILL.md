@@ -17,7 +17,7 @@ Frameflow does the mechanical work: transcribing recordings, reading the voiceov
 
 2. **Brief.** Read `brief_request.md` in full and write `brief.json`. Show the user the brief in plain words - what the video is, for whom, how long, which shape - with any open questions. **Wait for them to confirm.** Put their answers into `brief.json` and remove `open_questions`.
 
-3. **Storyboard.** Run `python -m project.produce output/<name> --storyboard`, read `storyboard_request.md` in full and write `storyboard.json`. Footage spans start and end inside the measured pauses listed for each recording. Show the user the script and each scene in one line (what is seen, what is said, any caption). **Wait for them to confirm**, and change it as they ask.
+3. **Storyboard.** Run `python -m project.produce output/<name> --storyboard`, read `storyboard_request.md` in full and write `storyboard.json`. Footage spans start and end inside the measured pauses listed for each recording. Show the user the script, each scene in one line (what is seen, what is said, any caption), and whether what is said is shown as word-by-word captions (`spoken_captions`). **Wait for them to confirm**, and change it as they ask.
 
 4. **Build.** Run `python -m project.produce output/<name> --build --open`. If it reports problems, fix `storyboard.json` and run it again until it succeeds.
 

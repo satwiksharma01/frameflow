@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from project.captions import follow_cut
 from project.change_agent import build_agent_request, build_context, propose_operations
 from project.editors import PARSE_ERRORS, editor_for
 from project.engine_check import EngineCheckError
@@ -160,6 +161,11 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     if graphics:
         _step("Rendering graphics with HyperFrames")
         render_generated(new_ir, project.folder)
+    synced = None
+    if operations and any(t["type"] == "captions" and t["clips"] for t in new_ir["tracks"]):
+        _step("Moving the captions with the cut")
+        synced = follow_cut(project.ir, new_ir, {source_key(project.timing["source"]): project.timing["words"]},
+                            project.folder)
     editor = editor_for(project.path)
     kept = backup(project.path)
     ir_path = project.folder / IR_FILE
@@ -189,12 +195,17 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     for g in graphics:
         print(f"    added {g.get('text') or g['composition']!r} at {g['at']:.2f}s for "
               f"{g['duration']:.1f}s: {g['reason']}")
+    if synced:
+        print(f"    captions: {synced['moved']} line(s) moved with the cut, {synced['removed']} went with "
+              f"their words, {synced['added']} new for speech that had none")
     if project.discarded:
         print(f"    discarded, as asked (the previous version still has them): "
               f"{'; '.join(project.discarded)}")
     main = main_index(project.ir)
-    # Clips that were there before this change; graphics just added are placed on the new cut.
-    others = sum(len(t["clips"]) for i, t in enumerate(project.ir["tracks"]) if i != main)
+    # Clips that were there before this change; graphics just added are placed on the new cut,
+    # and captions follow it.
+    others = sum(len(t["clips"]) for i, t in enumerate(project.ir["tracks"])
+                 if i != main and t["type"] != "captions")
     if others and operations:
         print(f"    ! {others} clip(s) on other tracks kept their positions; check they still "
               f"line up with the main track")
