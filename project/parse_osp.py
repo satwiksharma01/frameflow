@@ -14,7 +14,7 @@ import json
 import math
 from pathlib import Path
 
-from project.openshot_template import CLIP_DEFAULTS, keyframe
+from project.openshot_template import CLIP_DEFAULTS, CURVES, SCALE_CROP, SCALE_FIT, keyframe, location_units
 from project.sidecar import merge_sidecar, read_sidecar
 from project.validate import validate
 
@@ -87,7 +87,47 @@ def _levels(clip: dict, fps: float) -> dict | None:
     return fields
 
 
-def _parse_clip(clip: dict, n: int, project_dir: Path, fps: float) -> dict:
+def _offset(curve: dict, unit: float, fps: float) -> float | list[dict] | None:
+    """A location curve as an IR offset: a number when it holds still, keyframes
+    when it moves, None for a curve whose shape was drawn by hand."""
+    names = {code: name for name, code in CURVES.items()}
+    keys = []
+    for point in sorted(curve.get("Points") or [], key=lambda p: p["co"]["X"]):
+        name = names.get(point.get("interpolation", 0))
+        if name is None or (name == "smooth" and any(
+                point.get(k, v) != v for k, v in _POINT_STYLE.items() if k != "interpolation")):
+            return None
+        keys.append({"at": round((point["co"]["X"] - 1) / fps, _PRECISION),
+                     "value": round(point["co"]["Y"] / unit, _PRECISION),
+                     **({"curve": name} if name != "smooth" else {})})
+    if not keys:
+        return None
+    return keys[0]["value"] if len(keys) == 1 else keys
+
+
+def _framing(clip: dict, width: int, height: int, fps: float) -> dict | None:
+    """The clip's fill and position as IR fields: nothing for a clip left as
+    OpenShot places it, None for framing the IR cannot hold yet."""
+    default = CLIP_DEFAULTS["location_x"]
+    location = (clip.get("location_x", default), clip.get("location_y", default))
+    scale = clip.get("scale", SCALE_FIT)
+    if scale == SCALE_FIT and location == (default, default):
+        return {}
+    reader = clip.get("reader") or {}
+    if (scale != SCALE_CROP or clip.get("location_coordinate_system", "auto") != "auto"
+            or not reader.get("width") or not reader.get("height")):
+        return None
+    position = {}
+    for axis, curve, unit in zip("xy", location, location_units(width, height, reader["width"], reader["height"])):
+        offset = _offset(curve, unit, fps)
+        if offset is None:
+            return None
+        if offset != 0:
+            position[axis] = offset
+    return {"transform": {"fill": True, **({"position": position} if position else {})}}
+
+
+def _parse_clip(clip: dict, n: int, project_dir: Path, fps: float, width: int, height: int) -> dict:
     start, end = clip["start"], clip["end"]
     if end <= start:
         raise ParseError(f"clip {clip.get('id')!r} has non-positive length")
@@ -102,6 +142,7 @@ def _parse_clip(clip: dict, n: int, project_dir: Path, fps: float) -> dict:
         "timeline_duration": round(end - start, _PRECISION),
         # Curves the IR cannot hold are reported by unsupported_content, not here.
         **(_levels(clip, fps) or {}),
+        **(_framing(clip, width, height, fps) or {}),
     }
 
 
@@ -132,7 +173,8 @@ def parse_osp(path: Path | str, use_sidecar: bool = True) -> dict:
             # What OpenShot shows: the track's label, or "Track N" when it has none.
             "id": layer.get("label") or f"Track {index}",
             "type": "video",
-            "clips": [_parse_clip(c, n, project_dir, fps) for n, c in enumerate(on_layer, start=1)],
+            "clips": [_parse_clip(c, n, project_dir, fps, int(data["width"]), int(data["height"]))
+                      for n, c in enumerate(on_layer, start=1)],
         })
 
     known = {layer["number"] for layer in layers}
@@ -168,8 +210,8 @@ def unsupported_content(path: Path | str) -> list[str]:
     """Everything in the project that parsing and recompiling would lose.
 
     An allowlist, as for Shotcut: a clip whose settings differ from what
-    OpenShot gives an untouched clip - moved, scaled, sped up, muted, a
-    hand-drawn opacity or volume curve -
+    OpenShot gives an untouched clip - zoomed, rotated, sped up, muted, moved
+    while fitting the frame, a hand-drawn opacity, volume or position curve -
     or that carries an effect would be rewritten without it. Each item is a
     sentence a creator can act on.
     """
@@ -194,8 +236,11 @@ def unsupported_content(path: Path | str) -> list[str]:
             for effect in clip.get("effects") or []:
                 found.append(f"the {effect.get('class_name') or effect.get('type') or 'unnamed'} "
                              f"effect on {where}")
-            # Fades and steady levels carry over as IR fields; other curves do not.
+            # Fades, steady levels and the framing of a filled clip carry over as IR
+            # fields; other curves do not.
             carried = {"effects"} | ({"alpha", "volume"} if _levels(clip, fps) is not None else set())
+            if _framing(clip, int(data["width"]), int(data["height"]), fps) is not None:
+                carried |= {"scale", "location_x", "location_y"}
             changed = [k for k, v in CLIP_DEFAULTS.items() if k not in carried and clip.get(k) != v]
             changed += [k for k in clip if k not in CLIP_DEFAULTS and k not in _PER_CLIP]
             if changed:

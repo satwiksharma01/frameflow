@@ -93,6 +93,7 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(still["timeline_start"], 2.0)                 # after the 2s title
         self.assertAlmostEqual(still["timeline_duration"], 1.5, places=1)  # 1s voice + lead and tail
         self.assertEqual(still["volume_db"], produce.UNDER_NARRATION_DB)
+        self.assertEqual(still["transform"], {"fill": True})                # a 9:16 reel is filled
         self.assertTrue(Path(still["source"]).exists())
 
         title = tracks["Graphics"]["clips"][0]
@@ -137,6 +138,22 @@ class TestBuildingTheProject(unittest.TestCase):
             produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
         self.assertIn("lengthen the span", str(cm.exception))
 
+    def test_footage_in_a_reel_keeps_the_face_in_frame(self):
+        """A 1920x1080 recording in a 9:16 reel, the speaker standing right of centre at x=1500."""
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
+                               "folder": "f"}], "assets": [], "music": []}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 4.0}, "reason": "r"}]}
+        with mock.patch.object(produce.reframe, "face_centres", lambda video: [(t / 4, 1500.0) for t in range(40)]), \
+                mock.patch.object(produce.reframe, "picture_area", lambda video: (0, 1920)):
+            ir = produce.build_ir(self.folder, board, BRIEF, inputs)
+        # The window (607.5 source px wide) centres on 1500: the picture moves left by 540 px of 1080.
+        self.assertEqual(ir["tracks"][0]["clips"][0]["transform"], {"fill": True, "position": {"x": -0.888889}})
+        self.assertTrue((self.folder / "f" / "framing-1080x1920.json").exists())
+
     def test_footage_keeps_its_own_sound_without_narration(self):
         if not FOOTAGE.exists():
             self.skipTest("media not present")
@@ -148,6 +165,7 @@ class TestBuildingTheProject(unittest.TestCase):
         clip = ir["tracks"][0]["clips"][0]
         self.assertEqual((clip["source_in"], clip["source_out"]), (1.0, 4.0))
         self.assertNotIn("volume_db", clip)
+        self.assertNotIn("transform", clip)                              # 16:9 footage fits as it is
         self.assertEqual(ir["project"]["fps"], 30)                       # the footage's own rate
 
 

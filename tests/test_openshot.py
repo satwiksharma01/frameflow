@@ -174,6 +174,20 @@ class TestRoundTrip(unittest.TestCase):
                           "fade_out": {"sound": 3.0}})
         self.assertAlmostEqual(back["volume_db"], -6.0, places=5)
 
+    def test_a_crop_to_vertical_round_trips(self):
+        """A landscape recording filling a 9:16 frame: held still, and panned over keyframes."""
+        still = _clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)
+        still["transform"] = {"fill": True, "position": {"x": 0.1}}
+        panned = _clip("clip2", NORMALIZED_MEDIA, 4.0, 2.0, 2.0)
+        panned["transform"] = {"fill": True, "position": {"x": [
+            {"at": 4.0, "value": 0.0}, {"at": 5.0, "value": -0.2, "curve": "linear"},
+            {"at": 5.5, "value": 0.1, "curve": "hold"}]}}
+        ir = _ir([{"id": "V1", "type": "video", "clips": [still, panned]}])
+        ir["project"].update(width=1080, height=1920)
+        parsed = self.compile_and_parse(ir)
+        self.assertEqual([c["transform"] for c in parsed["tracks"][0]["clips"]],
+                         [still["transform"], panned["transform"]])
+
     def test_the_sidecar_restores_what_openshot_cannot_hold(self):
         ir = _ir([{"id": "V1", "type": "broll",
                    "clips": [_clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)]}])
@@ -284,6 +298,22 @@ class TestUnsupportedContent(unittest.TestCase):
         self.track1[0]["time"] = {"Points": keyframe(1, x=1)["Points"] + keyframe(60, x=30)["Points"]}
         self.track1[0]["location_x"] = keyframe(0.25)
         self.assertEqual(self.found(), ["changed location x, time on clip 1 on Track 1"])
+
+    def test_a_crop_moved_by_hand_is_carried(self):
+        """Filling the frame, then moving it at frame 90: OpenShot adds a linear point there."""
+        from project.openshot_template import keyframe
+        self.track1[0]["scale"] = 0
+        self.track1[0]["location_x"] = {"Points": keyframe(0.0)["Points"] + [
+            {"co": {"X": 90, "Y": 0.05}, "interpolation": 1}]}
+        self.assertEqual(self.found(), [])
+
+    def test_a_crop_curve_shaped_by_hand_is_named(self):
+        from project.openshot_template import keyframe
+        self.track1[0]["scale"] = 0
+        bent = keyframe(0.05, x=90)["Points"][0]
+        bent["handle_left"] = {"X": 0.1, "Y": 0.9}
+        self.track1[0]["location_x"] = {"Points": keyframe(0.0)["Points"] + [bent]}
+        self.assertEqual(self.found(), ["changed location x, scale on clip 1 on Track 1"])
 
     def test_an_effect_on_a_clip(self):
         self.track1[0]["effects"].append({"class_name": "Brightness", "id": "E1"})
@@ -419,6 +449,49 @@ class TestAudioTrack(unittest.TestCase):
             return float(r.stderr.split("max_volume:")[1].split("dB")[0])
         self.assertGreater(tone(1.5), -35)
         self.assertLess(tone(3.2), -60)
+
+
+class TestFramingInTheEngine(unittest.TestCase):
+    """Where OpenShot's own engine draws a filled, moved clip: a white bar down the
+    middle of a 1280x720 recording, in a 1080x1920 frame."""
+
+    # Renders one frame of a project to a PNG, inside OpenShot's Python.
+    FRAME = ("import json, sys, openshot\n"
+             "p = json.load(open(sys.argv[1], encoding='utf-8'))\n"
+             "t = openshot.Timeline(p['width'], p['height'], openshot.Fraction(p['fps']['num'], p['fps']['den']),"
+             " p['sample_rate'], p['channels'], p['channel_layout'])\n"
+             "t.SetJson(json.dumps(p)); t.Open()\n"
+             "t.GetFrame(int(sys.argv[3])).Save(sys.argv[2], 1.0, 'PNG', 100)\n"
+             "t.Close()\n")
+
+    def test_a_tenth_of_the_frame_moves_the_picture_108_pixels(self):
+        from PIL import Image
+        from project import openshot_build
+        from project.compile_osp import compile_file
+        if not _have_profiles() or openshot_build.install_dir() is None:
+            self.skipTest("OpenShot is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bar = root / "bar.mp4"
+            subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                            "color=black:size=1280x720:rate=30:duration=1,"
+                            "drawbox=x=640:y=0:w=20:h=720:color=white:t=fill",
+                            "-pix_fmt", "yuv420p", str(bar)], check=True)
+            (root / "frame.py").write_text(self.FRAME, encoding="utf-8")
+            lefts = []
+            for x in (0.0, 0.1):
+                clip = _clip("clip1", bar, 0.0, 0.0, 1.0)
+                clip["transform"] = {"fill": True, "position": {"x": x}}
+                ir = _ir([{"id": "V1", "type": "video", "clips": [clip]}])
+                ir["project"].update(width=1080, height=1920)
+                (root / "p.ir.json").write_text(json.dumps(ir), encoding="utf-8")
+                osp = compile_file(root / "p.ir.json", root / "p.osp")
+                result = openshot_build.run_script(root / "frame.py", str(osp), str(root / "f.png"), "15", cwd=root)
+                self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+                image = Image.open(root / "f.png").convert("L")
+                lefts.append(next(x for x in range(image.width) if image.getpixel((x, 960)) > 128))
+        # Centred, the bar's left edge is at the frame's middle; moved by 0.1, 108 px right.
+        self.assertEqual(lefts, [540, 648])
 
 
 if __name__ == "__main__":

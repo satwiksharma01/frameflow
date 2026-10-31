@@ -12,7 +12,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 ## What it does
 
-**First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision. Ask for captions and what you say pops in word by word, each line a clip on its own Captions track.
+**First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision. Ask for captions and what you say pops in word by word, each line a clip on its own Captions track. Ask for a vertical cut and a landscape recording fills a 9:16 frame, framed on your face and moving smoothly when you move; the crop is a clip setting you can change in OpenShot, and your change is kept through later edits.
 
 **A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles and captions rendered by HyperFrames (for a reel, what is said pops in word by word), a voiceover read by a voice on your computer, and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
 
@@ -64,7 +64,7 @@ Your agent then follows `output/<recording>/edit_request.md` and writes `edit_pl
 python -m project.first_cut "path/to/recording.mp4" --build --open
 ```
 
-Add `--editor shotcut` to both commands for a Shotcut project instead, and `--captions` for captions that pop in word by word as you speak.
+Add `--editor shotcut` to both commands for a Shotcut project instead, `--captions` for captions that pop in word by word as you speak, and `--vertical` for a 9:16 video (OpenShot only, for now).
 
 ### With an API key
 

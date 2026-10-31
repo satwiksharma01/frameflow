@@ -18,7 +18,8 @@ from pathlib import Path
 
 from project.compile_mlt import fps_to_fraction, resource_path, sec_to_frames
 from project.media import analyze, probe
-from project.openshot_template import CLIP_DEFAULTS, build_root, keyframe, layer, ratio
+from project.openshot_template import (CLIP_DEFAULTS, CURVES, SCALE_CROP, build_root, keyframe, layer,
+                                       location_units, ratio)
 from project.sidecar import write_sidecar
 from project.validate import validate
 
@@ -86,6 +87,23 @@ def _levels(clip: dict, in_f: int, length_f: int, fps: float) -> dict:
         "volume": _curve(10 ** (clip.get("volume_db", 0.0) / 20), fade_in.get("sound", 0),
                          fade_out.get("sound", 0), first, last, fps),
     }
+
+
+def _framing(clip: dict, reader: dict, width: int, height: int, fps: float) -> dict:
+    """A filled clip's scale mode and location curves. Keyframes count source frames from 1."""
+    transform = clip.get("transform") or {}
+    if not transform.get("fill"):
+        return {}
+    framing: dict = {"scale": SCALE_CROP}
+    for axis, unit in zip("xy", location_units(width, height, reader["width"], reader["height"])):
+        offset = transform.get("position", {}).get(axis, 0.0)
+        if isinstance(offset, list):
+            framing[f"location_{axis}"] = {"Points": [
+                {**keyframe(k["value"] * unit, x=float(round(k["at"] * fps) + 1))["Points"][0],
+                 "interpolation": CURVES[k.get("curve", "smooth")]} for k in offset]}
+        else:
+            framing[f"location_{axis}"] = keyframe(offset * unit)
+    return framing
 
 
 def _audio_reader(path: str, source: str, fps: float) -> tuple[dict, float]:
@@ -181,6 +199,7 @@ def build_osp(ir: dict, project_dir: Path) -> dict:
                 "title": Path(clip["source"]).name,
                 "reader": reader,
                 **_levels(clip, in_f, length_f, fps),
+                **_framing(clip, reader, project["width"], project["height"], fps),
             })
             end = max(end, (start_f + length_f) / fps)
 

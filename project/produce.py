@@ -25,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import captions, first_cut, hyperframes, voiceover
+from project import captions, first_cut, hyperframes, reframe, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import MediaError, analyze, probe, still_to_clip
@@ -257,6 +257,17 @@ def _seconds(path: Path) -> float:
     return float(probe(path)["format"]["duration"])
 
 
+def _crop_keys(folder: Path, footage: dict, width: int, height: int) -> list[dict]:
+    """Where a recording's crop goes to keep the face in frame, worked out once per recording and size."""
+    path = folder / footage["folder"] / f"framing-{width}x{height}.json"
+    if not path.exists():
+        info = analyze(footage["source"])
+        first_cut._write_json(path, reframe.crop_keys(
+            reframe.face_centres(footage["source"]), (width, height), (info.width, info.height),
+            reframe.picture_area(footage["source"])))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     """The storyboard as an IR, making the voiceover and still clips it needs."""
     width, height = SIZES[brief["aspect"]]
@@ -312,6 +323,12 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
             clip.update(timeline_start=cursor, timeline_duration=round(clip["source_out"] - clip["source_in"], 6))
             if spoken:
                 clip["volume_db"] = UNDER_NARRATION_DB
+            if brief["aspect"] != "16:9":       # a reel or a square post: footage fills the frame
+                clip["transform"] = {"fill": True}
+                if visual["type"] == "footage":     # ...with the speaker kept in it
+                    x = reframe.clip_offset(_crop_keys(folder, f, width, height), start, end)
+                    if x:
+                        clip["transform"]["position"] = {"x": x}
             main.append(clip)
         if "caption" in scene:
             fixed_captions.append({"timeline_start": cursor, "timeline_duration": length,

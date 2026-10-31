@@ -126,6 +126,15 @@ class TestRestore(unittest.TestCase):
         """Restoring 3-7 must not duplicate 3-4 and 6-7, which are already in the cut."""
         self.assertEqual(spans(run(self.BASE, op("restore", 3, 7))), [(0, 10), (12, 15)])
 
+    def test_what_is_put_back_is_framed_like_the_recording_around_it(self):
+        """In a vertical cut, speech put back is cropped like its neighbours, not letterboxed."""
+        project = ir((0, 4), (12, 15))
+        for clip in project["tracks"][0]["clips"]:
+            clip["transform"] = {"fill": True, "position": {"x": 0.05}}
+        result = run(project, op("restore", 6, 10))
+        self.assertEqual(spans(result), [(0, 4), (6, 10), (12, 15)])
+        self.assertEqual(result["tracks"][0]["clips"][1]["transform"], {"fill": True, "position": {"x": 0.05}})
+
     def test_restoring_what_is_already_there_is_reported(self):
         self.assertIn("already in the cut", check(op("restore", 1, 3), self.BASE, UNCHANGED)[0])
 

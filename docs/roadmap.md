@@ -1,0 +1,180 @@
+# Frameflow roadmap
+
+What OpenMontage does, what Frameflow does differently, and what to build next
+for the videos Frameflow is for: YouTube videos, pitches for ideas, and reels
+(fashion, lifestyle, products woven in).
+
+Written 2026-10-31, from OpenMontage's `main` branch on that day.
+
+## How this was worked out
+
+The method is the investigation workflow of REA (morluto/rea): turn the
+question into a checklist, answer each item from evidence, and keep what was
+seen apart from what was inferred and what is still unknown. REA's own skill
+says to skip its binary and app tooling when the full source is available, and
+OpenMontage's is, so the evidence is its repository:
+
+- the README and `AGENT_GUIDE.md` (its contract for agents);
+- two pipeline manifests, `talking-head.yaml` and `clip-factory.yaml`;
+- the whole file list (2,669 paths) from GitHub's tree API, searched by name;
+- the header text of `auto_reframe.py`, `export_bundle.py` and
+  `skills/meta/video-reference-analyst.md`.
+
+OpenMontage is AGPLv3. Nothing here copies its code; this is a map of what it
+does, so Frameflow can decide what to build in its own way.
+
+## What OpenMontage is
+
+An agent-first production system. There is no orchestrator in code: the coding
+agent reads a pipeline manifest (YAML), then a "director" instruction file
+(Markdown) for each stage, and calls Python tools. Every pipeline runs the same
+stages: research, proposal, script, scene plan, assets, edit, compose, publish.
+Each stage writes a JSON artifact checked against a schema, and the stages
+marked for approval cannot be written as complete without it.
+
+The output is a rendered file, `projects/<name>/renders/final.mp4`, composed
+by Remotion (React), HyperFrames (HTML) or FFmpeg.
+
+## Findings
+
+O = observed in the evidence, I = inferred from it, U = unknown.
+
+| Question | Answer | |
+|---|---|---|
+| Does the creator get a project to edit? | No editor project anywhere: no OTIO, FCPXML, EDL, Premiere, Resolve, Kdenlive or OpenShot file in 2,669 paths. The deliverable is `final.mp4`; changes go back through the agent as new `edit_decisions` and a new render. | O (a search of file names, not of file contents) |
+| Do the creator's own edits survive? | There is nothing for them to survive in: the creator never holds the timeline. | I |
+| How is the work driven? | Agent-first: 13 pipeline manifests (one a smoke test), a director file per stage, 209 Python files under `tools/`, found through a registry. | O |
+| How is talking-head footage handled? | Transcribe, cut silences, track faces, reframe, burn in captions with Remotion, colour grade, retouch faces and eyes, clean up audio. The pipeline is marked beta. | O |
+| Long recording to many shorts? | `clip-factory`: rank candidate clips, keep each self-contained, put the hook in the first 2-3 s, plan the framing per platform, write metadata per clip. Beta. | O |
+| Vertical from landscape? | `auto_reframe`: face tracking with MediaPipe/OpenCV, a smoothed track, then an FFmpeg crop baked into the file. | O |
+| "Make me something like this"? | A reference video is analysed for transcript, pacing, scenes, keyframes and style; then come 2-3 differentiated concepts, a cost estimate and a sample before full production. | O |
+| Captions? | Word by word, burned into the render by Remotion. | O |
+| Quality checks? | After rendering: ffprobe, frames from 4 positions checked for black frames and broken overlays, audio checked for silence and clipping, subtitles checked. Before rendering, a "slideshow risk" score. | O (how well they work: U) |
+| Approval and visibility? | Gates at proposal, script, scene plan, assets and publish. Backlot, a local web board, shows the run live and replays it. | O |
+| Cost? | Estimate, reserve, reconcile; asks above $0.50 per action; $10 cap by default. | O |
+| Providers? | 60+ by its own count: 20+ video generators, 15+ image, 10+ voices, music (Suno, ElevenLabs, a local library folder), 16 stock-footage sources. | O |
+| Look and feel? | Style playbooks (YAML: type, colour, motion, audio) and platform profiles (YouTube, Shorts, Reels, TikTok, LinkedIn). | O |
+| Publishing? | A local export bundle with the render and SEO metadata; no upload yet. | O |
+
+## Where Frameflow stands
+
+| | OpenMontage | Frameflow today |
+|---|---|---|
+| What the creator gets | A rendered `.mp4` | An OpenShot project (or Shotcut), every cut, graphic, caption and sound a clip they can change |
+| Their changes by hand | Not a concept | Detected and kept; an edit that would undo one is refused unless asked |
+| Asking for changes | The agent re-renders | Applied to the project as it is now, live in the open OpenShot window, one Ctrl+Z to undo |
+| Cuts in speech | Silence cutting | Cut points moved into measured pauses, then every join played back through OpenShot's engine and transcribed to check no word was clipped |
+| Captions | Burned in | Word by word, each line a clip, following the cut through later edits |
+| Video from a prompt | 12 pipelines, research, generated images and video | Brief, storyboard, build: the creator's footage, images and music, HyperFrames titles, the Windows voice |
+| Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track |
+| Reframing to vertical | Yes | No |
+| Long video to shorts | Yes | No |
+| Reference video | Yes | Planned: the creator's rebuild of Hypit |
+| B-roll and stock | 16 stock sources, CLIP search | The creator's own assets only |
+| Voice, music | Piper and ~10 paid voices; music generation and search | Windows' voice; the creator's music |
+| Generated pictures and video | Many providers | None |
+| Checks on the picture | After every render | Done by hand while building features, not part of the pipeline |
+| Cost control | Yes | Nothing paid yet, so not needed yet |
+
+**Where Frameflow wins: the project stays the creator's.** OpenMontage's answer
+to "change this" is to render again. Frameflow's answer is a timeline the
+creator can open, change by hand, and ask for more changes on, without losing
+their own. Every item below keeps that: whatever Frameflow adds lands in the
+project as something editable, not baked into pixels.
+
+**What not to chase:** breadth for its own sake. Sixty providers, 3D worlds,
+character rigs and avatars don't serve YouTube, pitches and reels made from the
+creator's own footage. Borrow OpenMontage's ideas where they serve those, and
+build them Frameflow's way.
+
+## Roadmap
+
+Ordered by what unblocks the most of the vision soonest. Each step ends with a
+check that can be run, as everything so far has.
+
+### 1. Reels from your own footage
+
+The format the creator posts most, and the shortest path from what exists.
+
+- **Vertical reframing that stays editable.** A 16:9 recording becomes 9:16
+  through a crop and position on the clip, not a crop baked into a new file:
+  the creator can nudge it in OpenShot. Start with a fixed centre crop (it fits
+  how the creator's webcam recordings are framed), then follow the face, as
+  smoothed position keyframes. *Done when:* a first cut with `--vertical` opens
+  in OpenShot as 1080×1920 with the face in frame throughout, and moving the
+  crop by hand survives the next edit.
+  *Status:* built and checked (2026-10-31): `--vertical` on a first cut and
+  footage in 9:16 and 1:1 prompt-made videos fill the frame, framed on the
+  face, with smooth moves when the speaker moves; a crop moved by hand in
+  OpenShot is kept through an edit.
+- **Many shorts from one long recording.** The editor picks N self-contained
+  moments (a hook in the first 2 s, no mid-sentence starts), and each becomes
+  its own project with captions and vertical framing. It reuses the first cut,
+  cut placement, captions and the check by ear. *Done when:* the 5-minute test
+  recording gives 3 shorts, each starting and ending in a measured pause.
+- **A voice that can be posted.** Piper (offline, free) beside the Windows
+  voice; it also needs word timings for captions. *Done when:* a prompt-made
+  reel narrated by Piper has captions in sync, checked by transcribing it.
+- **Loudness and level for the platform.** Measure integrated loudness (LUFS)
+  and set the voice level for the platform's target as a volume on the clips,
+  so it stays adjustable.
+
+### 2. Product pitches and fashion reels
+
+- **A brand kit.** Fonts, colours, logo and caption style per creator, used by
+  every title, card and caption: OpenMontage's style playbooks, kept small.
+  *Done when:* changing the kit restyles the next build without touching code.
+- **Product cards, price tags and lower thirds** as HyperFrames templates of
+  Frameflow's own (no GSAP), anchored to the moment a product is named.
+- **B-roll on its own track.** First from the creator's own asset folder,
+  matched to what is being said; stock (Pexels, Pixabay, with the creator's
+  free keys) only if they want it. Clips sit on a B-roll track, anchored to the
+  transcript like graphics, so edits move them too.
+- **Cutting to the beat.** Beat detection on the music, so fashion and
+  lifestyle reels cut on the beat; cuts stay ordinary clip boundaries.
+- **A look per video:** a colour LUT as an OpenShot effect the creator can
+  switch off.
+
+### 3. "Make it like this"
+
+The reference-video engine: the creator's from-scratch rebuild of Hypit, to be
+integrated when it is handed over. OpenMontage's version shows the useful
+shape: analyse pacing, shot lengths, caption style and the hook; propose 2-3
+concepts that keep the structure and change the subject; make a short sample
+before the whole video. In Frameflow it produces a storyboard, so the rest of
+the prompt workflow builds it as an editable project.
+
+### 4. YouTube videos and pitches
+
+- **Chapters and a publish package:** title, description, tags and chapter
+  times from the transcript, written beside the project (OpenMontage's export
+  bundle). Uploading stays the creator's.
+- **Screen recordings for builder content:** a screen recording plus a face
+  camera, laid out picture-in-picture as editable clips.
+- **Research for pitches:** the agent gathers facts with sources into the
+  brief, which the creator confirms like any brief.
+
+### 5. Checks on the picture, and a library of skills
+
+- **Look at the result:** after a build, render frames through OpenShot's
+  engine and check for black frames, captions off screen, and graphics covering
+  a face, the way the check by ear already listens to joins. *Done when:* a
+  deliberately misplaced caption is reported.
+- **The creator's content skills as a library:** their skills, once shared,
+  offered per video and picked in the brief, as agreed; never wired in.
+- **Generated pictures and video, optionally:** behind one interface, with a
+  cost estimate and a cap before anything paid runs (OpenMontage's budget
+  rules), and the result landing as an ordinary clip.
+
+### Later, outside this repository
+
+Plugging Frameflow into Produk, when that work starts. Not before.
+
+## Deliberately not planned
+
+- **Headless export by default.** The creator exports from OpenShot.
+- **Avatars, lip sync, 3D worlds, character animation.** OpenMontage has them;
+  none of the three kinds of video needs them.
+- **A web board like Backlot.** OpenShot's window is already where the creator
+  watches the project change; a board would be a second place to look.
+- **Translation and dubbing.** Worth a look once there is an audience abroad.

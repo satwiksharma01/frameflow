@@ -237,6 +237,63 @@ makes a fixed graphic), and only tracks of captions follow the cut - a title
 or card on the Graphics track keeps its position, since a title meant for the
 opening shouldn't vanish when the first seconds are cut.
 
+## Vertical video: a crop the creator can move
+
+`--vertical` on a first cut, and footage in a 9:16 or 1:1 prompt-made video,
+fill the frame: the IR clip gets `transform.fill`, which OpenShot shows as
+Scale "Crop". The picture is scaled to cover the frame and framed on the face;
+nothing is re-encoded, so the creator can change it like any clip setting.
+
+- **Position is in OpenShot's own units.** For a filled clip in 4.0.1, a
+  location of 1 moves the picture exactly off screen: half the frame plus half
+  the scaled picture. The IR keeps positions as a fraction of the frame instead
+  (`transform.position.x`), and the compiler and parser convert. Measured by
+  rendering a white bar through OpenShot's engine: centred, it starts at pixel
+  540 of 1080; moved by 0.1 of the frame, at 648.
+- **A move by hand becomes a keyframe.** Changing Location X in OpenShot's
+  properties with the playhead anywhere but a clip's first frame adds a point
+  there, with linear interpolation and no handles: the picture slides to the
+  new place. So the IR holds positions as keyframes too, in seconds of the
+  recording; cutting a clip in two leaves each half with the same curve, so
+  each moment keeps its framing. Checked in OpenShot itself: Location X set to
+  0.1 at 5 s, saved, then an edit removed 1.9 s inside that clip; both halves
+  kept the move, and frames rendered by OpenShot's engine show it.
+- Speech an edit puts back is framed like the recording around it.
+- A crop curve shaped by hand (Bezier handles moved), or a clip moved while it
+  fits the frame, is still named by an edit as something it would lose.
+- Shotcut refuses a filled clip rather than drop the crop.
+
+**Following the face** (`project/reframe.py`). OpenCV's frontal-face
+detector, which ships with OpenCV, runs on frames sampled four times a second
+(1,303 frames of a 5-minute recording in about 7 s). The crop is a camera
+operator, not a tracker:
+
+- Detections are a 2 s median, so a miss, a nod or a glance aside does nothing.
+- The window holds still until the face drifts more than a quarter of the
+  window's width from where it has been, and then holds at least 2 s more.
+- Each hold is framed on the median of where the face was during it, not where
+  it started: framed on the first two seconds, the test recording sat further
+  off-centre than a plain centre crop in 3 of 6 frames.
+- A move takes 0.6 s, as keyframes on the clip's position in seconds of the
+  recording, smooth (OpenShot's default Bezier) into its new place.
+- The window stays inside the recorded picture: FFmpeg's cropdetect found
+  black bars in the test recording leaving a picture only 508 px wide in a
+  1280 px file, so the 405 px window can shift just 51 px either way.
+
+Checked on that recording: the face was found in 1,243 of 1,303 frames; the
+speaker never moved far enough to need a move, so the crop is one framing,
+centred on where the face usually is. In 12 frames rendered by OpenShot's
+engine across the cut, the face is a median 32 px from the frame's centre,
+against 56 px for a centre crop (worst 139 against 125, while leaning). The
+moves themselves are checked with simulated faces; OpenShot draws keyframed
+positions where the IR says, as measured with the white bar.
+
+Not yet: following on the vertical axis, or more than one person (the largest
+face wins). And only the most recently opened Frameflow
+OpenShot window can be changed live: a second window takes over the bridge
+file, and closing it removes the file, so the first window's changes land on
+disk but not on screen until it is reopened.
+
 ## OpenWhispr: transcription, and talking to Frameflow
 
 OpenWhispr (OpenWhispr/openwhispr, MIT) is a dictation app built on

@@ -81,6 +81,25 @@ CLIP_DEFAULTS = {
 }
 
 
+# libopenshot's scale modes: cover the frame, cropping what overflows, or fit inside it.
+SCALE_CROP, SCALE_FIT = 0, 1
+
+# Keyframe interpolation codes, by the IR's names for them.
+CURVES = {"smooth": 0, "linear": 1, "hold": 2}
+
+
+def location_units(width: int, height: int, source_width: int, source_height: int) -> tuple[float, float]:
+    """OpenShot's location values per fraction of the frame, for a clip that fills it.
+
+    In 4.0.1 a filled clip's location is relative to its own scaled size and the
+    frame's together: 1 moves it exactly off screen, half the frame plus half
+    the picture. So a move of a fraction f of the frame is f * 2 * frame /
+    (frame + picture) in OpenShot's units.
+    """
+    scale = max(width / source_width, height / source_height)
+    return (2 * width / (width + source_width * scale), 2 * height / (height + source_height * scale))
+
+
 class ProfileError(Exception):
     pass
 

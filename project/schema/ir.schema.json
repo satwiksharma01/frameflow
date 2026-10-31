@@ -121,17 +121,42 @@
             "height": { "type": "number" }
           }
         },
+        "fill": {
+          "type": "boolean",
+          "description": "Scale the picture to cover the whole frame, cutting off what overflows (a 16:9 recording in a 9:16 video shows its middle), instead of fitting it inside the frame."
+        },
         "position": {
           "type": "object",
           "additionalProperties": false,
+          "description": "How far the picture's centre is moved from the frame's centre, as a fraction of the frame's width (x, positive is right) and height (y, positive is down). Moving a filled picture chooses which part of it shows.",
           "properties": {
-            "x": { "type": "number" },
-            "y": { "type": "number" }
+            "x": { "$ref": "#/$defs/offset" },
+            "y": { "$ref": "#/$defs/offset" }
           }
         },
         "scale": { "type": "number", "exclusiveMinimum": 0 },
         "rotation": { "type": "number" }
       }
+    },
+    "offset": {
+      "description": "One offset for the whole clip, or keyframes when it changes over the clip.",
+      "oneOf": [
+        { "type": "number" },
+        {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["at", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "at": { "type": "number", "minimum": 0, "description": "Seconds into the source media, so a keyframe stays on its moment when the clip is cut." },
+              "value": { "type": "number" },
+              "curve": { "enum": ["smooth", "linear", "hold"], "description": "How the value moves from the previous keyframe to this one. Smooth when absent." }
+            }
+          }
+        }
+      ]
     },
     "fade": {
       "type": "object",

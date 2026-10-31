@@ -248,6 +248,37 @@ class TestEditingAnOpenShotProject(unittest.TestCase):
         self.assertAlmostEqual(captions["clips"][0]["timeline_start"], 4.4, places=3)
         self.assertEqual(after["tracks"][1]["clips"][0]["timeline_start"], 3.0)   # B-roll stays put
 
+    def test_a_crop_moved_by_hand_survives_an_edit(self):
+        """A vertical cut whose crop the creator moved in OpenShot at 2s: after a cut
+        is made in that clip, both halves keep the move, in recording time."""
+        from project.compile_osp import compile_file
+        from project.parse_osp import parse_osp
+        ir_path = self.folder / "project.ir.json"
+        ir = json.loads(ir_path.read_text(encoding="utf-8"))
+        ir["project"].update(width=1080, height=1920)
+        ir["tracks"] = ir["tracks"][:1]
+        for clip in ir["tracks"][0]["clips"]:
+            clip["transform"] = {"fill": True}
+        ir_path.write_text(json.dumps(ir), encoding="utf-8")
+        compile_file(ir_path, self.osp)
+        # What OpenShot writes when the creator changes Location X with the playhead at 2s.
+        osp = json.loads(self.osp.read_text(encoding="utf-8"))
+        first = min(osp["clips"], key=lambda c: c["position"])
+        first["location_x"]["Points"].append({"co": {"X": 61, "Y": 0.1}, "interpolation": 1})
+        self.osp.write_text(json.dumps(osp), encoding="utf-8")
+
+        apply_change(load(self.osp), {"summary": "tighten", "operations": [
+            {"action": "remove", "start": 2.5, "end": 3.8, "reason": "tighten",
+             "source": MAIN_MEDIA.name}]}, verify=False)
+        after = parse_osp(self.osp)
+        halves = after["tracks"][0]["clips"][:2]
+        self.assertEqual([(c["source_in"], c["source_out"]) for c in halves], [(0.0, 2.333333), (3.933333, 5.0)])
+        moved = {"fill": True, "position": {"x": [{"at": 0.0, "value": 0.0},
+                                                  {"at": 2.0, "value": halves[0]["transform"]["position"]["x"][1]["value"],
+                                                   "curve": "linear"}]}}
+        self.assertEqual([c["transform"] for c in halves], [moved, moved])
+        self.assertGreater(moved["position"]["x"][1]["value"], 0)
+
     def test_a_cut_inside_a_faded_clip_keeps_each_fade_on_its_outer_edge(self):
         """Fade In and Out on clip 1 (0-5s); removing 2.5-3.8s splits it in two."""
         from project.openshot_template import keyframe

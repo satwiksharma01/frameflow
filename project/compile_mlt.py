@@ -86,10 +86,10 @@ def _compilable_tracks(ir: dict) -> list[dict]:
         )
 
     levels = [c["id"] for t in tracks for c in t["clips"]
-              if any(k in c for k in ("opacity", "volume_db", "fade_in", "fade_out"))]
+              if any(k in c for k in ("opacity", "volume_db", "fade_in", "fade_out", "transform"))]
     if levels:
         raise NotImplementedError(
-            f"fades, opacity and volume are not compiled for Shotcut yet: {', '.join(levels)}."
+            f"fades, opacity, volume and framing are not compiled for Shotcut yet: {', '.join(levels)}."
         )
 
     if not any(t["clips"] for t in tracks):
