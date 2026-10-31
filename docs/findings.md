@@ -294,6 +294,53 @@ OpenShot window can be changed live: a second window takes over the bridge
 file, and closing it removes the file, so the first window's changes land on
 disk but not on screen until it is reopened.
 
+## Shorts from one long recording
+
+`python -m project.shorts` asks the editor for the moments that stand on their
+own (a hook in the first two seconds, a whole sentence at each end, 20-60 s),
+then builds each as a first cut of its own: everything outside the moment is a
+removal, so cut placement, face framing, captions and the check by ear are the
+first cut's, unchanged.
+
+Checked on the 5-minute test recording: three shorts (37, 42 and 23 s); every
+cut moved into a measured pause, by 47 ms at most. Each short rendered through
+OpenShot's engine and transcribed opens and ends where the plan said. What it
+showed:
+
+- **Whisper's own word timings fail in stretches of a long recording.** Over
+  263-266 s, about 40 words were timed into half a second, and the next word
+  ("basically") was stretched over 13 s. The short covering that stretch
+  showed 14 caption lines in 0.4 s and then none for 11 s, and its check by
+  ear flagged a join because the word it expected was wrong (the speech there
+  is whole). Cut placement was unaffected: it uses measured pauses, not words.
+  Transcribing an 8 s slice on its own also showed that a phrase the full
+  transcript had twice ("I could also just tell") was said once.
+- **Word timings now come from whisper.cpp's DTW alignment.** Measured
+  against pauses, a token's DTW time is where the word *ends* ("yeah" at
+  278.19 s, the pause after it from 278.22; "really" 258.33, pause 258.36). So
+  a word ends at its last token's DTW time, and starts where the word before it
+  ended, or at the end of a measured pause between them. Over the whole
+  5-minute recording: words starting inside a measured pause went from 108 to
+  0, words timed as zero length from 45 to 9, words stretched over 2 s from 3
+  to 0, and the 263-266 s stretch is timed word by word. It needs the model's
+  alignment preset (`-dtw large.v3.turbo`, read from the model's file name)
+  and flash attention off: with it on, whisper.cpp quietly returns no DTW
+  times. The word pass took 7 min for the 5.4-minute recording on whisper's
+  default 4 threads, and 3.5 min on all 16 (an i5-12500H: 4 fast cores, 8
+  slow), with the same words and times. On a 60 s slice the same pass took
+  64 s on 4 threads, 50 on 8, 44 on 12 and 43 on 16, so Frameflow passes every
+  thread. Transcribing each short's span again, tried first, was no
+  better once the whole recording had DTW times, and is not done.
+- **A word too short to read gets company.** With true timings, a short word
+  left alone on a caption line ("the", "current") was up for 3 frames. A line
+  that would be up for under 0.3 s now takes the last word of the line before
+  it, across a breath of up to 0.5 s (as long as a line is held for the next
+  anyway). Across the three shorts: no line up for under 0.3 s, no speech
+  uncaptioned for over 2 s, and every join sounds clean.
+- **A pause can sit inside a word.** The third short was meant to start after
+  "So", in a measured 0.25 s pause; heard back, it still opens on "So", whose
+  soft end runs under the silence threshold.
+
 ## OpenWhispr: transcription, and talking to Frameflow
 
 OpenWhispr (OpenWhispr/openwhispr, MIT) is a dictation app built on

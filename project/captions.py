@@ -24,6 +24,7 @@ BREAK_SECONDS = 0.35    # a pause this long between words starts a new line
 TAIL_SECONDS = 0.3      # a line stays up this long after its last word,
 HOLD_SECONDS = 0.5      # or until the next line, if that starts this soon after
 LONGEST_WORD = 1.5      # Whisper can stretch one word over seconds of noise
+SHORTEST_LINE = 0.3     # a line up for less flickers, so it takes the word before it
 HIGHLIGHT = "#FFE14D"
 
 _PAGE = """<!doctype html>
@@ -111,6 +112,14 @@ def lines(runs: list[dict], fps: float, max_chars: int) -> list[dict]:
                 g.append(w)
             else:
                 groups.append([w])
+        for i in range(1, len(groups)):
+            before, g = groups[i - 1], groups[i]
+            following = groups[i + 1][0]["start"] if i + 1 < len(groups) else r["end"]
+            if (following - g[0]["start"] < SHORTEST_LINE and len(before) > 1
+                    and before[-1]["start"] - before[0]["start"] >= SHORTEST_LINE
+                    and before[-1]["text"][-1] not in ".?!" and g[0]["start"] - before[-1]["end"] < HOLD_SECONDS
+                    and len(" ".join(x["text"] for x in before[-1:] + g)) <= max_chars):
+                g.insert(0, before.pop())
         stop = round(r["end"] * fps)
         for i, g in enumerate(groups):
             start = round(g[0]["start"] * fps)

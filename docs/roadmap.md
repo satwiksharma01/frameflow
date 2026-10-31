@@ -112,6 +112,13 @@ The format the creator posts most, and the shortest path from what exists.
   its own project with captions and vertical framing. It reuses the first cut,
   cut placement, captions and the check by ear. *Done when:* the 5-minute test
   recording gives 3 shorts, each starting and ending in a measured pause.
+  *Status:* built (2026-10-31): `python -m project.shorts` and the `shorts`
+  skill. The test recording gave 3 shorts of 37, 42 and 23 s, every cut in a
+  measured pause; heard back through OpenShot's engine, each opens and ends on
+  a whole sentence. Word timings now come from whisper.cpp's DTW alignment,
+  because Whisper's own collapsed in places and left a short with 11 s of no
+  captions; with them, and lines that never flash by, every caption line in
+  the three shorts is up for at least 0.3 s (see findings).
 - **A voice that can be posted.** Piper (offline, free) beside the Windows
   voice; it also needs word timings for captions. *Done when:* a prompt-made
   reel narrated by Piper has captions in sync, checked by transcribing it.

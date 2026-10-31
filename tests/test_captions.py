@@ -33,6 +33,21 @@ class TestLines(unittest.TestCase):
         self.assertEqual(found[1]["end"], round((1.2 + captions.TAIL_SECONDS) * 30))   # 1.8s gap: not
         self.assertEqual(found[2]["end"], round((3.4 + captions.TAIL_SECONDS) * 30))
 
+    def test_a_word_too_short_to_read_alone_takes_the_word_before_it(self):
+        said = words((0.0, 0.3, "look"), (0.3, 0.5, "at"), (0.5, 0.65, "the"), (0.65, 0.8, "current"),
+                     (0.8, 1.3, "timeline,"), (1.3, 1.6, "find"))
+        found = captions.lines([captions.run(said, 0.0, 2.0, 0.0)], 30, 14)
+        # "look at the current" is 19 characters; alone, "current" would be up for 0.15s.
+        self.assertEqual(texts(found), ["look at", "the current", "timeline, find"])
+
+    def test_it_takes_it_across_a_breath_but_not_a_real_pause(self):
+        said = words((0.0, 0.5, "creativity"), (0.5, 0.9, "um"), (1.3, 1.4, "actually"), (1.4, 1.9, "making"))
+        self.assertEqual(texts(captions.lines([captions.run(said, 0.0, 2.0, 0.0)], 30, 14)),
+                         ["creativity", "um actually", "making"])          # a 0.4s breath before "actually"
+        said = words((0.0, 0.5, "creativity"), (0.5, 0.9, "um"), (2.0, 2.1, "actually"), (2.1, 2.6, "making"))
+        self.assertEqual(texts(captions.lines([captions.run(said, 0.0, 3.0, 0.0)], 30, 14)),
+                         ["creativity um", "actually", "making"])          # 1.1s: the line before is down by then
+
     def test_a_word_stretched_over_noise_does_not_hold_the_line(self):
         found = captions.lines([captions.run(words((1.0, 10.6, "recording.")), 0.0, 12.0, 0.0)], 30, 14)
         self.assertEqual(found[0]["end"], round((1.0 + captions.LONGEST_WORD + captions.TAIL_SECONDS) * 30))

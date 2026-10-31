@@ -14,6 +14,8 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 **First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision. Ask for captions and what you say pops in word by word, each line a clip on its own Captions track. Ask for a vertical cut and a landscape recording fills a 9:16 frame, framed on your face and moving smoothly when you move; the crop is a clip setting you can change in OpenShot, and your change is kept through later edits.
 
+**Shorts from a long recording.** The editor picks the moments that stand on their own — each opening on a hook, starting and ending on a whole sentence — and each becomes its own vertical OpenShot project, framed on your face, with captions, built and checked like a first cut.
+
 **A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles and captions rendered by HyperFrames (for a reel, what is said pops in word by word), a voiceover read by a voice on your computer, and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
 
 **Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Captions move with the cut. The previous version is always kept.
@@ -66,6 +68,22 @@ python -m project.first_cut "path/to/recording.mp4" --build --open
 
 Add `--editor shotcut` to both commands for a Shotcut project instead, `--captions` for captions that pop in word by word as you speak, and `--vertical` for a 9:16 video (OpenShot only, for now).
 
+### Shorts from one long recording
+
+Ask Claude Code for shorts, Reels or TikToks from a recording and the `shorts` skill runs it. By hand:
+
+```bash
+python -m project.shorts "path/to/recording.mp4" --prepare --count 3
+```
+
+Your agent follows `shorts_request.md` and writes `shorts_plan.json`: for each short, where it starts and ends, its hook, and anything to remove inside it. Then:
+
+```bash
+python -m project.shorts "path/to/recording.mp4" --build
+```
+
+Each short is built in its own folder, `short-1/`, `short-2/`, ..., as a vertical first cut with captions.
+
 ### With an API key
 
 ```bash
@@ -110,6 +128,7 @@ Everything for a recording goes in `output/<recording name>/`:
 | `<name>.frameflow.json` | Frameflow's record of what it last wrote. **Keep it beside the project** — it's how a later change tells your hand edits apart from its own |
 | `transcript.json`, `timing.json` | What was said, and the measured pauses |
 | `edit_plan.json` | Every first-cut decision, with its reason |
+| `shorts_plan.json`, `short-1/`, ... | The moments picked for shorts, and each short's project |
 | `history/` | Every previous version of the project, kept before each change |
 
 A recording with a variable frame rate — what most screen recorders and phone cameras produce — is first converted to a constant rate in the same folder, because cut points drift on variable-rate video.
@@ -127,7 +146,7 @@ Two rules come from things that went wrong on real recordings:
 
 | | |
 |---|---|
-| `project/first_cut.py`, `project/edit.py`, `project/produce.py` | The three commands: cut a recording, change a project, make a video from a prompt |
+| `project/first_cut.py`, `project/shorts.py`, `project/edit.py`, `project/produce.py` | The commands: cut a recording, cut shorts from it, change a project, make a video from a prompt |
 | `project/hyperframes.py`, `project/captions.py`, `project/voiceover.py` | Titles and cards rendered by HyperFrames; word-by-word captions; the voiceover |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |
 | `project/cutpoints.py`, `project/verify_cuts.py` | Placing cuts in pauses, and listening to them afterwards |

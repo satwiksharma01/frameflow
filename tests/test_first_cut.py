@@ -9,8 +9,11 @@ Run with: python -m unittest discover tests
 """
 import copy
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from project.editor_agent import (
     TOOL_NAME,
@@ -27,7 +30,8 @@ from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
 from project.providers.anthropic_provider import AnthropicProvider, _echoable
 from project.providers.openai_provider import OpenAICompatibleProvider
-from project.transcribe import parse_silencedetect, whisper_json_to_segments
+from project import transcribe
+from project.transcribe import dtw_preset, parse_silencedetect, whisper_json_to_segments, word_timings
 from project.validate import ValidationError, validate
 
 TRANSCRIPT = {
@@ -82,6 +86,63 @@ class TestTranscriptionParsing(unittest.TestCase):
             {"offsets": {"from": 0, "to": 2000}, "text": " ."},
         ]}
         self.assertEqual(whisper_json_to_segments(whisper), [])
+
+    def test_word_ends_come_from_dtw_and_starts_from_measured_pauses(self):
+        """Measured on a real recording: a token's DTW time is where the word ends."""
+        whisper = {"transcription": [
+            {"offsets": {"from": 27700, "to": 27900}, "text": " yeah,", "tokens": [
+                {"text": " yeah", "t_dtw": 2800}, {"text": ",", "t_dtw": 2819}, {"text": "[_TT_140]", "t_dtw": -1}]},
+            {"offsets": {"from": 27900, "to": 29750}, "text": " basically", "tokens": [
+                {"text": " basically", "t_dtw": 2973}]},
+            {"offsets": {"from": 29750, "to": 29850}, "text": " .", "tokens": [{"text": " .", "t_dtw": 2980}]},
+            {"offsets": {"from": 29850, "to": 29950}, "text": " I", "tokens": [{"text": " I", "t_dtw": 3035}]},
+        ]}
+        pauses = [{"start": 28.22, "end": 29.33}, {"start": 29.85, "end": 30.12}]
+        self.assertEqual(word_timings(whisper, pauses), [
+            {"start": 27.7, "end": 28.19, "text": "yeah,"},            # first word: whisper's own start
+            {"start": 29.33, "end": 29.73, "text": "basically"},       # not stretched over the pause before it
+            {"start": 30.12, "end": 30.35, "text": "I"},
+        ])
+
+    def test_without_dtw_whispers_own_word_times_are_used(self):
+        whisper = {"transcription": [{"offsets": {"from": 500, "to": 900}, "text": " hello",
+                                      "tokens": [{"text": " hello", "t_dtw": -1}]}]}
+        self.assertEqual(word_timings(whisper, []), [{"start": 0.5, "end": 0.9, "text": "hello"}])
+
+    def test_dtw_needs_the_models_alignment_preset_and_flash_attention_off(self):
+        self.assertEqual(dtw_preset(Path("models/ggml-large-v3-turbo-q5_0.bin")), "large.v3.turbo")
+        self.assertEqual(dtw_preset(Path("ggml-base.en.bin")), "base.en")
+        self.assertEqual(dtw_preset(Path("ggml-medium-q8_0.bin")), "medium")
+        self.assertIsNone(dtw_preset(Path("my-finetune.bin")))
+
+        calls = []
+
+        def run(args, **kwargs):
+            calls.append(args)
+            Path(args[args.index("-of") + 1]).with_suffix(".json").write_text("{}", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(transcribe.subprocess, "run", run), \
+                mock.patch.object(transcribe, "find_whisper_cli", lambda: "whisper-cli"):
+            transcribe.run_whisper("a.wav", Path("ggml-large-v3-turbo-q5_0.bin"), "en", Path(tmp) / "w", per_word=True)
+            transcribe.run_whisper("a.wav", Path("my-finetune.bin"), "en", Path(tmp) / "w", per_word=True)
+        self.assertIn("large.v3.turbo", calls[0][calls[0].index("-dtw") + 1])
+        self.assertIn("-nfa", calls[0])                    # with flash attention on, whisper.cpp quietly skips DTW
+        self.assertNotIn("-dtw", calls[1])
+
+    def test_whisper_runs_on_every_core(self):
+        calls = []
+
+        def run(args, **kwargs):
+            calls.append(args)
+            Path(args[args.index("-of") + 1]).with_suffix(".json").write_text("{}", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(transcribe.subprocess, "run", run), \
+                mock.patch.object(transcribe, "find_whisper_cli", lambda: "whisper-cli"), \
+                mock.patch.object(transcribe.os, "cpu_count", lambda: 16):
+            transcribe.run_whisper("a.wav", Path("ggml-base.bin"), "en", Path(tmp) / "w")
+        self.assertEqual(calls[0][calls[0].index("-t") + 1], "16")   # whisper-cli uses 4 unless told
 
     def test_silencedetect_pairs_start_and_end(self):
         stderr = (

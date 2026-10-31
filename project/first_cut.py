@@ -136,7 +136,9 @@ def load_plan(out_dir: Path, transcript: dict) -> dict:
 
 
 def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
-          editor: Editor = EDITORS[DEFAULT], captions: bool = False, vertical: bool = False) -> Path:
+          editor: Editor = EDITORS[DEFAULT], captions: bool = False, vertical: bool = False,
+          name: str | None = None) -> Path:
+    name = name or video.stem
     transcript = json.loads((out_dir / TRANSCRIPT_FILE).read_text(encoding="utf-8"))
     source = Path(transcript["source"])
     info = analyze(source)
@@ -168,7 +170,7 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
         # The declared rate is the exact one (e.g. 30000/1001, not a rounded
         # 30). For a CFR source it matches the measured average by definition.
         plan, source, info.width, info.height, info.nominal_fps,
-        "cfr" if source.resolve() == video.resolve() else "normalized_from_vfr", video.stem,
+        "cfr" if source.resolve() == video.resolve() else "normalized_from_vfr", name,
         source_duration=info.duration_seconds,
     )
     if vertical:
@@ -193,7 +195,7 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
             print(f"    {add_captions(ir, runs_from_cut(ir, words), out_dir)} lines")
     ir_path = out_dir / "project.ir.json"
     _write_json(ir_path, ir)
-    project = editor.compile_file(ir_path, out_dir / f"{video.stem}{editor.suffix}")
+    project = editor.compile_file(ir_path, out_dir / f"{name}{editor.suffix}")
 
     if editor.engine_check:
         _step("Checking the project in the MLT engine")

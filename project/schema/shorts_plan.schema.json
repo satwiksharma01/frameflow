@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/shorts_plan.schema.json",
+  "title": "FrameflowShortsPlan",
+  "description": "The moments of one long recording an editor picked to stand on their own as short vertical videos. Each becomes a first cut of its own, so `remove` works like a first cut's removals.",
+  "type": "object",
+  "required": ["shorts"],
+  "additionalProperties": false,
+  "properties": {
+    "reasoning": {
+      "type": "string",
+      "description": "Optional: how the moments were chosen, and why there are fewer than asked for, if there are."
+    },
+    "shorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "start", "end", "hook", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "description": "A few words naming the moment, for the creator." },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 },
+          "hook": { "type": "string", "minLength": 1, "description": "The opening line, and why it makes someone stop scrolling." },
+          "reason": { "type": "string", "minLength": 1, "description": "Why the moment stands on its own." },
+          "remove": {
+            "type": "array",
+            "description": "Spans inside the moment to cut, in order: false starts, repeated takes, long pauses.",
+            "items": {
+              "type": "object",
+              "required": ["start", "end", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "start": { "type": "number", "minimum": 0 },
+                "end": { "type": "number", "exclusiveMinimum": 0 },
+                "reason": { "type": "string", "minLength": 1 },
+                "confidence": { "type": "string", "enum": ["high", "low"], "description": "Optional; absent means high. \"low\" when you are not sure the cut is right." }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

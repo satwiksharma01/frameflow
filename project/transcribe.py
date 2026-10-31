@@ -204,13 +204,53 @@ def whisper_json_to_segments(whisper: dict) -> list[dict]:
     return segments
 
 
+def word_timings(whisper: dict, pauses: list[dict]) -> list[dict]:
+    """Words, timed by DTW where whisper.cpp aligned them.
+
+    Measured against pauses on a real recording, a token's DTW time is where it
+    ends, while Whisper's own word times stretch a word over the silence before
+    it. So a word ends at its last token's DTW time, and starts where the word
+    before it ended, or at the end of a measured pause between them.
+    """
+    items = whisper.get("transcription", [])
+    if not any(t.get("t_dtw", -1) >= 0 for item in items for t in item.get("tokens", [])):
+        return whisper_json_to_segments(whisper)
+    words = []
+    for item in items:
+        text = item.get("text", "").strip()
+        if not any(ch.isalnum() for ch in text):
+            continue
+        aligned = [t["t_dtw"] for t in item.get("tokens", [])
+                   if t.get("t_dtw", -1) >= 0 and not t["text"].startswith("[_")]
+        end = aligned[-1] / 100 if aligned else item["offsets"]["to"] / 1000
+        start = words[-1]["end"] if words else item["offsets"]["from"] / 1000
+        start = max([start] + [p["end"] for p in pauses if start <= p["end"] <= end])
+        words.append({"start": round(start, 3), "end": round(max(start, end), 3), "text": text})
+    return words
+
+
+# whisper.cpp's alignment-head presets for DTW, named like the model files.
+DTW_PRESETS = {"tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
+               "large.v1", "large.v2", "large.v3", "large.v3.turbo"}
+
+
+def dtw_preset(model: Path) -> str | None:
+    """The DTW preset for a ggml model file: ggml-large-v3-turbo-q5_0.bin -> large.v3.turbo."""
+    name = re.sub(r"-q\d_\d$", "", Path(model).stem.removeprefix("ggml-")).replace("-", ".")
+    return name if name in DTW_PRESETS else None
+
+
 def run_whisper(wav: Path | str, model: Path, language: str, out_base: Path,
                 per_word: bool = False) -> dict:
     extra = ["-ml", "1", "-sow"] if per_word else []
+    if per_word and (preset := dtw_preset(model)):
+        # DTW times are only in the full JSON, and whisper.cpp quietly skips DTW with flash attention on.
+        extra += ["-ojf", "-dtw", preset, "-nfa"]
     result = subprocess.run(
         [find_whisper_cli(), "-m", str(model), "-f", str(wav), "-l", language,
          "--suppress-nst",  # drop non-speech annotations like "*Trips*" or "[Music]"
-         *extra, "-oj", "-of", str(out_base), "-np"],
+         *extra, "-oj", "-of", str(out_base), "-np",
+         "-t", str(os.cpu_count() or 4)],  # whisper-cli uses 4 threads unless told; all of them was fastest
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=4 * 3600,
     )
     json_path = out_base.with_suffix(".json")
@@ -243,10 +283,9 @@ def build_timing_map(video: Path | str, model: Path | str | None = None,
     return {
         "source": video.resolve().as_posix(),
         "duration_seconds": round(info.duration_seconds, 3),
-        "words": whisper_json_to_segments(whisper),
+        "words": word_timings(whisper, pauses),
         "pauses": pauses,
     }
-
 
 def transcribe(video: Path | str, model: Path | str | None = None, language: str = "auto") -> dict:
     video = Path(video)
