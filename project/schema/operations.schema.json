@@ -82,6 +82,27 @@
         "if": { "properties": { "kind": { "const": "lower_third" } }, "required": ["kind"] },
         "then": { "not": { "required": ["price"] } }
       }
+    },
+    "broll": {
+      "type": "array",
+      "description": "Optional. The creator's own images or clips cutting away from the recording while it keeps playing underneath, where what is said matches what they show. Each goes on a B-roll track above the cut, filling the frame, its own sound turned right down. Applied after the operations. Each is anchored to a moment in the recording, so it comes in when that is said, and later edits move it with the cut.",
+      "items": {
+        "type": "object",
+        "required": ["path", "at", "duration", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "description": "The full path of one of the creator's images or video clips." },
+          "start": { "type": "number", "minimum": 0, "description": "Optional, clips only: seconds into the clip to start from; 0 when absent." },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File name of the recording `at` refers to. Optional when the main track uses a single recording."
+          },
+          "at": { "type": "number", "minimum": 0, "description": "Seconds into the recording where it comes in; it must be in the cut." },
+          "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Seconds on screen. It stops at the end of the video." },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
     }
   }
 }

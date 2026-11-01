@@ -40,6 +40,8 @@ RATE_JITTER_TOLERANCE = 0.02
 TARGET_LUFS = -14.0
 PEAK_CEILING_DBTP = -1.0
 
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
 
 class MediaError(Exception):
     pass

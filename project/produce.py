@@ -26,10 +26,10 @@ import json
 import sys
 from pathlib import Path
 
-from project import captions, first_cut, hyperframes, reframe, voiceover
+from project import broll, captions, first_cut, hyperframes, reframe, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
-from project.media import MediaError, analyze, level_db, loudness, probe, still_to_clip
+from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
 from project.validate import ValidationError, load_schema, validate
@@ -43,13 +43,13 @@ STORYBOARD_REQUEST = "storyboard_request.md"
 IR_FILE = "project.ir.json"
 
 SIZES = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 # Under narration, a visual's own sound is turned down this far: inaudible, but
 # still a level OpenShot and Frameflow read back (a true mute is not one yet).
 UNDER_NARRATION_DB = -60.0
 VOICE_LEAD_SECONDS = 0.15
 VOICE_TAIL_SECONDS = 0.35
 CARD_SECONDS = 3.0      # how long a product card or lower third stays up, unless the storyboard says
+BROLL_SECONDS = 3.0     # how long a cutaway to B-roll lasts, unless the storyboard says
 
 
 class ProduceError(Exception):
@@ -203,6 +203,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
 {brand_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
+- Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
 
   ```
@@ -251,6 +252,11 @@ def check_storyboard(board: dict, inputs: dict) -> list[str]:
                 problems.append(f"{label}: starts after the end of the {a['duration']:.2f}s clip")
         elif visual["type"] == "composition" and not (Path(visual["path"]) / "index.html").exists():
             problems.append(f"{label}: {visual['path']} has no index.html")
+        for b in scene.get("broll", []):
+            if not _match(b["path"], inputs["assets"], "path"):
+                problems.append(f"{label}: B-roll {b['path']!r} is not one of the creator's assets")
+        if "broll" in scene and visual["type"] != "footage":
+            problems.append(f"{label}: B-roll goes over footage; make the asset a scene of its own instead")
         if visual["type"] in ("title", "composition") or (visual["type"] == "asset" and a and a["kind"] == "image"):
             if "duration" not in scene and "narration" not in scene:
                 problems.append(f"{label}: give it a duration, or narration to set one")
@@ -298,7 +304,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     fps = brief.get("fps") or (round(analyze(inputs["footage"][0]["source"]).nominal_fps)
                                if inputs["footage"] else 30)
     voice_name = board.get("voice") or next(iter(voiceover.voices()), None)   # the first listed: Piper's when installed
-    main, graphics, fixed_captions, voice, said = [], [], [], [], []
+    main, graphics, fixed_captions, voice, said, cutaways = [], [], [], [], [], []
     cursor, problems = 0.0, []
 
     for n, scene in enumerate(board["scenes"], start=1):
@@ -357,7 +363,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                         clip["transform"]["position"] = {"x": x}
             main.append(clip)
         heard = None        # what is said in the scene, on the timeline: the narration, else the footage's speech
-        if board.get("spoken_captions") or "cards" in scene:
+        if board.get("spoken_captions") or "cards" in scene or "broll" in scene:
             if spoken:
                 words = json.loads(spoken[0].with_suffix(".json").read_text(encoding="utf-8"))
                 heard = captions.run(words, 0.0, length - VOICE_LEAD_SECONDS, cursor + VOICE_LEAD_SECONDS)
@@ -388,6 +394,17 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                              "generator": "hyperframes", "text": card["text"],
                              "generator_params": {"layout": card["kind"],
                                                   **{k: card[k] for k in ("subtitle", "price") if k in card}}})
+        for b in scene.get("broll", []):
+            at = cursor
+            if "when" in b:
+                at = _said_at(heard["words"] if heard else [], b["when"])
+                if at is None:
+                    problems.append(f"{b['when']!r} is not said in scene {n}, so the B-roll {b['path']!r} "
+                                    f"has no moment to cut away at; use words from its transcript or narration")
+                    continue
+            cutaways.append({"label": f"scene {n}: B-roll {b['path']!r}", "at": at, "start": b.get("start", 0.0),
+                             "path": _match(b["path"], inputs["assets"], "path")["path"],
+                             "duration": min(b.get("duration", BROLL_SECONDS), cursor + length - at)})
         if spoken:
             voice.append({"source": spoken[0].resolve().as_posix(), "source_in": 0.0,
                           "source_out": spoken[1], "timeline_start": round(cursor + VOICE_LEAD_SECONDS, 6),
@@ -415,6 +432,11 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
           "tracks": [{"id": tid, "type": kind,
                       "clips": [{"id": f"clip{i}", **c} for i, c in enumerate(clips, start=1)]}
                      for tid, kind, clips in tracks if clips or tid == "V1" or (tid == "Captions" and said)]}
+    if cutaways:
+        problems = broll.place(ir, cutaways, 0)
+        if problems:
+            raise ProduceError("the storyboard needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+        broll.make_stills(ir, folder)
     if said:
         first_cut._step("Rendering word-by-word captions with HyperFrames")
         print(f"    {captions.add(ir, said, folder)} lines")

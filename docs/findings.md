@@ -242,6 +242,43 @@ where spoken captions go, so the two never cover each other.
 Not yet: a product photo in the card, and a price tag on its own pinned to the
 item in the picture.
 
+## B-roll on its own track
+
+The creator's own images and clips cut away from the recording while it keeps
+playing: a B-roll track just above the main track, below graphics and
+captions. A storyboard scene of footage lists its B-roll with `when`, the words
+it cuts away on, as cards do; an edit gives a file's path and a moment of the
+recording, as graphics do. The agent matches files to what is said; Frameflow
+places, frames and keeps them in step.
+
+- **Fill, never fit.** A clip fitted inside the frame would leave the speaker
+  showing around it, so every B-roll clip fills the frame (a centre crop) and an
+  image gets the image scene's slow push in, made at placing time and cached
+  in `stills/`.
+- **The recording's sound carries on.** A clip's own sound is set to -60 dB:
+  inaudible, but a level OpenShot and Frameflow read back.
+- **Later edits move graphics and B-roll with the cut.** Before, they kept
+  their positions and the edit warned. Now each goes where its first moment of
+  the recording plays; if that moment was cut, it starts where the cut is, and
+  only one with nothing left of what it covered goes. It keeps its length,
+  unlike a caption line, which belongs to its words: only the next clip on its
+  track or the end of the video cuts it short. Graphics already there move
+  before new ones are placed, so the overlap check sees the new cut.
+- **OpenShot only for now.** Shotcut projects cannot carry the fill or the
+  volume yet, so an edit with B-roll on an `.mlt` stops and says so.
+- Checked on a copy of the first short, through OpenShot's engine: the jacket
+  photo at 55 s of the recording and the Meet recording (from 15 s, where it
+  has speech, -21 LUFS) at 60 s came in at 7.9 s and 12.9 s, filling the
+  frame with the captions on top. Transcribed, the 3 s under the Meet cutaway
+  are the speaker's own words ("you know the necessary stuff and sometimes you
+  say this"); the Meet clip's own line is not heard. A second edit removed
+  2.13 s before them: both moved up 2.13 s, and the frames show the same words
+  under each.
+
+Not yet: stock footage (Pexels, Pixabay, with the creator's own keys), and
+help seeing what a clip shows - the agent can look at images, but a clip it
+can only judge by its name.
+
 ## Captions, word by word
 
 `--captions` on a first cut, or `"spoken_captions": true` in a storyboard,

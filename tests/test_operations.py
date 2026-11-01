@@ -4,11 +4,12 @@
 Run with: python -m unittest discover tests
 """
 import copy
+import tempfile
 import unittest
 from pathlib import Path
 
 from project.cutpoints import PAD_SECONDS, frame_align
-from project.operations import add_graphics, apply, check, resolve
+from project.operations import add_broll, add_graphics, apply, check, move_with_cut, resolve
 from project.parse_mlt import parse_mlt
 from project.reconcile import HumanChanges, reconcile, source_key
 from project.sidecar import read_sidecar
@@ -303,6 +304,68 @@ class TestGraphics(unittest.TestCase):
     def test_a_graphic_needs_text_or_a_composition(self):
         bare = {"at": 1.0, "duration": 1.0, "reason": "test"}
         self.assertIn("text, or a composition", add_graphics(copy.deepcopy(self.BASE), [bare])[0])
+
+    def test_b_roll_comes_in_where_its_moment_plays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "jacket.png"
+            image.write_bytes(b"png")
+            entry = {"path": str(image), "at": 7.0, "duration": 2.0, "reason": "test"}
+            validate({"summary": "s", "operations": [], "broll": [entry]}, "operations")
+            project = copy.deepcopy(self.BASE)
+            self.assertEqual(add_broll(project, [entry]), [])
+            self.assertIn("not in the cut", add_broll(copy.deepcopy(self.BASE), [dict(entry, at=5.0)])[0])
+        track = project["tracks"][1]
+        self.assertEqual((track["id"], track["type"]), ("B-roll", "broll"))
+        self.assertEqual(track["clips"][0]["timeline_start"], 5.0)
+
+
+class TestMovingWithTheCut(unittest.TestCase):
+    """Graphics and B-roll go where their moment of the recording plays after an edit."""
+
+    def test_what_follows_a_removed_span_moves_up_and_what_was_in_it_goes(self):
+        before = ir((0, 10))
+        before["tracks"] += [
+            {"id": "Graphics", "type": "graphics", "clips": [
+                {"id": "clip1", "timeline_start": 1.5, "timeline_duration": 1.0, "generator": "hyperframes",
+                 "text": "Gone"},
+                {"id": "clip2", "timeline_start": 4.0, "timeline_duration": 2.0, "generator": "hyperframes",
+                 "text": "Moved", "source": "C:/g/a.mov", "source_in": 0.0, "source_out": 2.0}]},
+            {"id": "B-roll", "type": "broll", "clips": [
+                {"id": "clip1", "source": "C:/media/street.mp4", "source_in": 0.0, "source_out": 2.0,
+                 "timeline_start": 7.5, "timeline_duration": 2.0}]}]
+        after = run(before, op("remove", 1, 3))
+        self.assertEqual(move_with_cut(before, after), {"moved": 2, "removed": 1})
+        graphics, b_roll = after["tracks"][1]["clips"], after["tracks"][2]["clips"]
+        self.assertEqual([(c["text"], c["timeline_start"]) for c in graphics], [("Moved", 2.0)])
+        self.assertEqual(b_roll[0]["timeline_start"], 5.5)
+        validate(after, "ir")
+
+    def test_one_whose_start_was_cut_starts_where_the_cut_is_now(self):
+        before = ir((0, 10))
+        before["tracks"].append({"id": "B-roll", "type": "broll", "clips": [
+            {"id": "clip1", "source": "C:/media/street.mp4", "source_in": 0.0, "source_out": 2.0,
+             "timeline_start": 2.0, "timeline_duration": 2.0}]})
+        after = run(before, op("remove", 1, 3))
+        move_with_cut(before, after)
+        self.assertEqual((after["tracks"][1]["clips"][0]["timeline_start"],
+                          after["tracks"][1]["clips"][0]["timeline_duration"]), (1.0, 2.0))
+
+    def test_b_roll_keeps_its_length_until_the_next_clip_or_the_end(self):
+        before = ir((0, 10))
+        before["tracks"].append({"id": "B-roll", "type": "broll", "clips": [
+            {"id": f"clip{n}", "source": "C:/media/street.mp4", "source_in": 0.0, "source_out": d,
+             "timeline_start": t, "timeline_duration": d} for n, (t, d) in enumerate([(3.5, 2.5), (6.0, 2.0),
+                                                                                       (8.0, 2.0)], start=1)]})
+        doc = {"summary": "test", "operations": [
+            {"action": "remove", "start": 4, "end": 5.5, "reason": "test"},
+            {"action": "remove", "start": 9, "end": 10, "reason": "test"}]}
+        after = run(before, doc)                            # the cut is now 7.5 s long
+        move_with_cut(before, after)
+        self.assertEqual([(c["timeline_start"], c["timeline_duration"], c["source_out"])
+                          for c in after["tracks"][1]["clips"]],
+                         [(3.5, 1.0, 1.0),                  # cut short where the next one now starts
+                          (4.5, 2.0, 2.0), (6.5, 1.0, 1.0)])  # and where the video now ends
+        validate(after, "ir")
 
 
 if __name__ == "__main__":

@@ -246,7 +246,10 @@ class TestEditingAnOpenShotProject(unittest.TestCase):
         after = parse_osp(self.osp)
         captions = next(t for t in after["tracks"] if t["type"] == "captions")
         self.assertAlmostEqual(captions["clips"][0]["timeline_start"], 4.4, places=3)
-        self.assertEqual(after["tracks"][1]["clips"][0]["timeline_start"], 3.0)   # B-roll stays put
+        # The B-roll's first moment, 3s, was removed: it starts where the cut now is, and keeps its length.
+        b_roll = after["tracks"][1]["clips"][0]
+        self.assertAlmostEqual(b_roll["timeline_start"], 2.333333, places=5)
+        self.assertEqual(b_roll["timeline_duration"], 3.0)
 
     def test_a_crop_moved_by_hand_survives_an_edit(self):
         """A vertical cut whose crop the creator moved in OpenShot at 2s: after a cut

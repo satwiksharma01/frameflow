@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from project import broll
 from project.captions import follow_cut
 from project.change_agent import build_agent_request, build_context, propose_operations
 from project.editors import PARSE_ERRORS, editor_for
@@ -38,7 +39,8 @@ from project.engine_check import EngineCheckError
 from project.first_cut import TIMING_FILE, _step, _write_json
 from project.openshot_template import ProfileError
 from project.hyperframes import HyperFramesError, render_generated
-from project.operations import add_graphics, apply, check, main_index, resolve
+from project.media import MediaError
+from project.operations import add_broll, add_graphics, apply, check, main_index, move_with_cut, resolve
 from project.providers import ProviderError, get_provider
 from project.reconcile import HumanChanges, reconcile, source_key
 from project.sidecar import read_sidecar, sidecar_path
@@ -147,26 +149,34 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     operations, problems = resolve(doc, project.ir, project.changes, pauses, durations)
     new_ir, apply_problems = apply(project.ir, operations) if not problems else (None, [])
     problems += apply_problems
-    graphics = doc.get("graphics", [])
+    graphics, cutaways = doc.get("graphics", []), doc.get("broll", [])
+    editor = editor_for(project.path)
+    if cutaways and editor.suffix != ".osp":
+        problems.append("B-roll needs an OpenShot project for now: Shotcut projects cannot fill the frame "
+                        "with a clip or turn its sound down yet")
+    followed = None
     if not problems:
-        problems += add_graphics(new_ir, graphics)
+        # Graphics and B-roll already there move with the cut before new ones are placed on it.
+        followed = move_with_cut(project.ir, new_ir) if operations else None
+        problems += add_graphics(new_ir, graphics) + add_broll(new_ir, cutaways)
     if problems:
         raise EditError("the operations need fixing:\n" + "\n".join(f"  {p}" for p in problems))
 
     print(f"    {doc['summary']}")
-    if not operations and not graphics:
+    if not operations and not graphics and not cutaways:
         print("    No changes made; the project is untouched.")
         return None
 
     if graphics:
         _step("Rendering graphics with HyperFrames")
         render_generated(new_ir, project.folder)
+    if cutaways:
+        broll.make_stills(new_ir, project.folder)
     synced = None
     if operations and any(t["type"] == "captions" and t["clips"] for t in new_ir["tracks"]):
         _step("Moving the captions with the cut")
         synced = follow_cut(project.ir, new_ir, {source_key(project.timing["source"]): project.timing["words"]},
                             project.folder)
-    editor = editor_for(project.path)
     kept = backup(project.path)
     ir_path = project.folder / IR_FILE
     _write_json(ir_path, new_ir)
@@ -195,6 +205,11 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     for g in graphics:
         print(f"    added {g.get('text') or g['composition']!r} at {g['at']:.2f}s for "
               f"{g['duration']:.1f}s: {g['reason']}")
+    for b in cutaways:
+        print(f"    added B-roll {Path(b['path']).name} at {b['at']:.2f}s for {b['duration']:.1f}s: {b['reason']}")
+    if followed and any(followed.values()):
+        print(f"    graphics and B-roll: {followed['moved']} moved with the cut, {followed['removed']} went "
+              f"with their moment")
     if synced:
         print(f"    captions: {synced['moved']} line(s) moved with the cut, {synced['removed']} went with "
               f"their words, {synced['added']} new for speech that had none")
@@ -202,10 +217,9 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
         print(f"    discarded, as asked (the previous version still has them): "
               f"{'; '.join(project.discarded)}")
     main = main_index(project.ir)
-    # Clips that were there before this change; graphics just added are placed on the new cut,
-    # and captions follow it.
+    # Clips that were there before this change; captions, graphics and B-roll follow the cut.
     others = sum(len(t["clips"]) for i, t in enumerate(project.ir["tracks"])
-                 if i != main and t["type"] != "captions")
+                 if i != main and t["type"] not in ("captions", "graphics", "broll"))
     if others and operations:
         print(f"    ! {others} clip(s) on other tracks kept their positions; check they still "
               f"line up with the main track")
@@ -295,7 +309,7 @@ def main() -> None:
 
         _step("Applying")
         result = apply_change(project, doc, verify=not args.no_verify)
-    except (EditError, ProviderError, EngineCheckError, ProfileError, HyperFramesError) as e:
+    except (EditError, ProviderError, EngineCheckError, ProfileError, HyperFramesError, MediaError) as e:
         sys.exit(f"\n{e}")
 
     if result:

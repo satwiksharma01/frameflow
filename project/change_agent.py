@@ -46,7 +46,7 @@ The transcript tells you what was said, but its times are Whisper's estimates: a
 
 The creator's own edits win. Do not restore what they removed, or remove what they put back, unless the instruction explicitly asks for that; when it does, set override_human_edit and say which part of the instruction asks. Any other operation that would undo their edit is rejected.
 
-Change only what the instruction asks for. If it is ambiguous, make the smallest reasonable change, set "confidence": "low" and put the doubt in the reason. Titles, captions, lower thirds and product cards go in "graphics", rendered by HyperFrames. If part of it cannot be done with removing, restoring and graphics - reordering, effects, B-roll - do the part that can be done and say in the summary what was left undone. If nothing should change, submit no operations and explain why in the summary."""
+Change only what the instruction asks for. If it is ambiguous, make the smallest reasonable change, set "confidence": "low" and put the doubt in the reason. Titles, captions, lower thirds and product cards go in "graphics", rendered by HyperFrames; the creator's own images and clips shown while the recording plays on go in "broll", by their full path. If part of it cannot be done with removing, restoring, graphics and B-roll - reordering, effects - do the part that can be done and say in the summary what was left undone. If nothing should change, submit no operations and explain why in the summary."""
 
 SYSTEM_PROMPT = CHANGE_GUIDANCE + """
 

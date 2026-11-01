@@ -8,7 +8,7 @@ raw recording  →  first cut (a real .osp project)  →  you edit in OpenShot  
 
 Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and you get a Shotcut `.mlt` project instead; changes work on either.
 
-> **Status: early and experimental.** Cutting talking-head and screen recordings works end to end on real footage. B-roll and short-form reframing are not built. Developed and tested on Windows 11 only.
+> **Status: early and experimental.** Cutting talking-head and screen recordings works end to end on real footage. Stock footage and generated pictures or video are not built. Developed and tested on Windows 11 only.
 
 ## What it does
 
@@ -16,9 +16,9 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 **Shorts from a long recording.** The editor picks the moments that stand on their own — each opening on a hook, starting and ending on a whole sentence — and each becomes its own vertical OpenShot project, framed on your face, with captions, built and checked like a first cut.
 
-**A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles, captions, product cards and lower thirds rendered by HyperFrames (for a reel, what is said pops in word by word; a product card comes up as the product is named), a voiceover read on your computer by Piper's natural voice (trained on public-domain recordings, so you can post it), and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
+**A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, cutaways to your other images and clips while you talk, titles, captions, product cards and lower thirds rendered by HyperFrames (for a reel, what is said pops in word by word; a product card comes up as the product is named), a voiceover read on your computer by Piper's natural voice (trained on public-domain recordings, so you can post it), and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
 
-**Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Captions move with the cut. The previous version is always kept.
+**Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Ask for B-roll and your own images and clips cut away from the recording where what you say matches them, on their own B-roll track, filling the frame with their sound turned down while your voice carries on. Captions, graphics and B-roll move with the cut. The previous version is always kept.
 
 **What it will not do quietly:**
 - **Cut mid-word without saying so.** Every cut point is moved into a measured pause. If the only pause is too short for a clean cut at your frame rate, a first cut warns you at build time, and a change refuses it so the editor picks a better boundary.

@@ -72,6 +72,12 @@
           "items": { "$ref": "#/$defs/card" },
           "description": "Optional: product cards and lower thirds over this scene's footage or asset, in the brand kit's style, at the left just above the spoken captions. Not over a title or composition, and one on screen at a time."
         },
+        "broll": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/broll" },
+          "description": "Optional, footage scenes only: the creator's images or clips cutting away from the recording while it keeps playing underneath, where what is said matches what they show. They go on a B-roll track, filling the frame, their own sound turned right down."
+        },
         "reason": { "type": "string", "minLength": 1, "description": "Why this scene is here, for the creator." }
       }
     },
@@ -96,6 +102,21 @@
       },
       "if": { "properties": { "kind": { "const": "lower_third" } } },
       "then": { "not": { "required": ["price"] } }
+    },
+    "broll": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "description": "One of the creator's assets, as listed in the request." },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional: words said in this scene, in the recording's transcript or the narration, written as they are said there. It cuts away as the first of them is said. At the scene's start when absent."
+        },
+        "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Optional: seconds on screen, 3 when absent. It never runs past the end of the scene." },
+        "start": { "type": "number", "minimum": 0, "description": "Optional, clips only: seconds into the clip to start from." }
+      }
     },
     "footage": {
       "type": "object",

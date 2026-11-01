@@ -36,6 +36,7 @@ import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from project import broll
 from project.cutpoints import find_pause, frame_align, is_tight, place_in_pause
 from project.editor_agent import MIN_KEEP_SECONDS
 from project.reconcile import HumanChanges, merge_spans, source_key, subtract_spans
@@ -301,6 +302,17 @@ def apply(ir: dict, operations: list[Operation]) -> tuple[dict, list[str]]:
     return new, problems
 
 
+def _plays_at(main: list[dict], at: float, source: str | None) -> tuple[float | None, str | None]:
+    """Where moment `at` of the recording plays in the cut, or why it does not."""
+    hits = [c for c in main if c["source_in"] <= at < c["source_out"]
+            and (source is None or Path(c["source"]).name == Path(source).name)]
+    if len({source_key(c["source"]) for c in hits}) > 1:
+        return None, 'more than one recording is in the cut at that time; name one in "source"'
+    if not hits:
+        return None, "that moment of the recording is not in the cut"
+    return round(hits[0]["timeline_start"] + at - hits[0]["source_in"], 6), None
+
+
 def add_graphics(ir: dict, graphics: list[dict]) -> list[str]:
     """Put each graphic on the Graphics track, where its moment of the recording
     plays in the cut. Changes `ir` in place; returns what was wrong instead."""
@@ -315,15 +327,10 @@ def add_graphics(ir: dict, graphics: list[dict]) -> list[str]:
         if "text" not in g and "composition" not in g:
             problems.append(f"{label}: give it text, or a composition")
             continue
-        hits = [c for c in main if c["source_in"] <= g["at"] < c["source_out"]
-                and ("source" not in g or Path(c["source"]).name == Path(g["source"]).name)]
-        if len({source_key(c["source"]) for c in hits}) > 1:
-            problems.append(f"{label}: more than one recording is in the cut at that time; name one in \"source\"")
+        start, problem = _plays_at(main, g["at"], g.get("source"))
+        if problem:
+            problems.append(f"{label}: {problem}")
             continue
-        if not hits:
-            problems.append(f"{label}: that moment of the recording is not in the cut")
-            continue
-        start = round(hits[0]["timeline_start"] + g["at"] - hits[0]["source_in"], 6)
         end = start + g["duration"]
         clash = [c for c in track["clips"]
                  if c["timeline_start"] < end and start < c["timeline_start"] + c["timeline_duration"]]
@@ -348,6 +355,84 @@ def add_graphics(ir: dict, graphics: list[dict]) -> list[str]:
     return problems
 
 
+def add_broll(ir: dict, entries: list[dict]) -> list[str]:
+    """Put each of the creator's images or clips on the B-roll track, where its moment of the
+    recording plays in the cut. Changes `ir` in place; returns what was wrong instead."""
+    main = main_index(ir)
+    items, problems = [], []
+    for n, b in enumerate(entries, start=1):
+        label = f"B-roll {n} (at {b['at']}s)"
+        at, problem = _plays_at(ir["tracks"][main]["clips"], b["at"], b.get("source"))
+        if problem:
+            problems.append(f"{label}: {problem}")
+            continue
+        items.append({"label": label, "path": b["path"], "at": at, "duration": b["duration"],
+                      "start": b.get("start", 0.0)})
+    return problems + (broll.place(ir, items, main) if items else [])
+
+
+def move_with_cut(before: dict, after: dict) -> dict[str, int]:
+    """After an edit changed the main track, move graphics and B-roll to where their moment of
+    the recording now plays.
+
+    One whose first moment was removed starts where the cut now is; one with nothing left of
+    what it covered goes. Each keeps its length, unlike a caption line, which belongs to its
+    words: only the next clip on its track or the end of the video cuts it short. One over a
+    gap in the main track stays where it is. Changes `after` in place; returns how many moved
+    and went.
+    """
+    old = before["tracks"][main_index(before)]["clips"]
+    new = after["tracks"][main_index(after)]["clips"]
+    end = max((c["timeline_start"] + c["timeline_duration"] for c in new), default=0.0)
+    counts = {"moved": 0, "removed": 0}
+    for track in after["tracks"]:
+        if track["type"] not in ("graphics", "broll") or not track["clips"]:
+            continue
+        kept = []
+        for clip in track["clips"]:
+            t0, t1 = clip["timeline_start"], clip["timeline_start"] + clip["timeline_duration"]
+            under = sorted((c for c in old if c["timeline_start"] < t1
+                            and t0 < c["timeline_start"] + c["timeline_duration"]),
+                           key=lambda c: c["timeline_start"])
+            if not under:
+                kept.append(clip)
+                continue
+            start = None
+            for o in under:          # the first moment it covered that is still in the cut
+                lo = o["source_in"] + max(t0, o["timeline_start"]) - o["timeline_start"]
+                hi = o["source_in"] + min(t1, o["timeline_start"] + o["timeline_duration"]) - o["timeline_start"]
+                found = [(max(lo, c["source_in"]), c) for c in new
+                         if source_key(c["source"]) == source_key(o["source"])
+                         and max(lo, c["source_in"]) < min(hi, c["source_out"])]
+                if found:
+                    moment, c = min(found, key=lambda f: f[0])
+                    start = round(c["timeline_start"] + moment - c["source_in"], 6)
+                    break
+            if start is None:
+                counts["removed"] += 1
+                continue
+            counts["moved"] += start != t0
+            clip["timeline_start"] = start
+            _shorten(clip, end)
+            kept.append(clip)
+        kept.sort(key=lambda c: c["timeline_start"])
+        for clip, following in zip(kept, kept[1:]):
+            _shorten(clip, following["timeline_start"])
+        track["clips"] = kept
+        for n, clip in enumerate(kept, start=1):
+            clip["id"] = f"clip{n}"
+    return counts
+
+
+def _shorten(clip: dict, until: float) -> None:
+    """Cut a clip short so it ends by `until`, if it runs past it."""
+    over = round(clip["timeline_start"] + clip["timeline_duration"] - until, 6)
+    if over > 0:
+        clip["timeline_duration"] = round(clip["timeline_duration"] - over, 6)
+        if "source_out" in clip:
+            clip["source_out"] = round(clip["source_out"] - over, 6)
+
+
 def check(doc: dict, ir: dict, changes: HumanChanges,
           pauses: dict[str, list[dict]] | None = None,
           durations: dict[str, float] | None = None) -> list[str]:
@@ -356,4 +441,4 @@ def check(doc: dict, ir: dict, changes: HumanChanges,
     if problems:
         return problems
     new, problems = apply(ir, operations)
-    return problems + add_graphics(new, doc.get("graphics", []))
+    return problems + add_graphics(new, doc.get("graphics", [])) + add_broll(new, doc.get("broll", []))

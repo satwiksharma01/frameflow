@@ -60,6 +60,18 @@ class TestStoryboardChecks(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(self.board({"visual": {"type": "stock", "query": "rain"}, "reason": "r"}), "storyboard")
 
+    def test_b_roll_goes_over_footage_and_comes_from_the_assets(self):
+        board = self.board(
+            {"visual": {"type": "footage", "source": "talk.mp4", "start": 1, "end": 4}, "reason": "r",
+             "broll": [{"path": "broll.mp4", "when": "this jacket", "start": 1.0}, {"path": "other.mp4"}]},
+            {"visual": {"type": "title", "text": "Hi"}, "duration": 2, "reason": "r",
+             "broll": [{"path": "shot.png"}]})
+        validate(board, "storyboard")
+        problems = produce.check_storyboard(board, self.INPUTS)
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("'other.mp4' is not one of the creator's assets", problems[0])
+        self.assertIn("scene 2 (title): B-roll goes over footage", problems[1])
+
     def test_only_a_product_card_has_a_price(self):
         def scene(card):
             return self.board({"visual": {"type": "asset", "path": "shot.png"}, "duration": 2, "reason": "r",
@@ -181,6 +193,26 @@ class TestBuildingTheProject(unittest.TestCase):
              "cards": [{"kind": "lower_third", "text": "Satwik Sharma", "when": "Hello, there!"}]}]}
         ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
         self.assertEqual(ir["tracks"][1]["clips"][0]["timeline_start"], 1.0)   # said at 2.0 s, inside the span
+
+    def test_b_roll_cuts_away_when_the_recording_says_its_words(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [
+            {"start": 2.0, "end": 2.3, "text": " this"}, {"start": 2.3, "end": 2.6, "text": " jacket"}]}))
+        inputs = dict(self._image(), footage=[{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(),
+                                               "duration": 25.7, "folder": "f"}])
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 4.0}, "reason": "r",
+             "broll": [{"path": "shot.png", "when": "jacket", "duration": 5.0}]}]}
+        with mock.patch.object(produce.broll, "still_to_clip", lambda image, out, *a: _tone(out, 1.0)):
+            ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
+        validate(ir, "ir")
+        self.assertEqual([t["id"] for t in ir["tracks"]], ["V1", "B-roll"])
+        cutaway = ir["tracks"][1]["clips"][0]
+        # "jacket" is said 1.3 s into the span; the cutaway stops with the scene, 1.7 s later.
+        self.assertEqual((cutaway["timeline_start"], cutaway["timeline_duration"]), (1.3, 1.7))
+        self.assertEqual(ir["tracks"][0]["clips"][0]["source_out"], 4.0)    # the recording plays on beneath
 
     def test_a_card_stops_at_the_end_of_its_scene(self):
         board = {"script": "s", "scenes": [

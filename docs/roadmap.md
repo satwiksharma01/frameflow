@@ -72,7 +72,7 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Reframing to vertical | Face tracking, the crop baked into a new file | Face following as a crop and position on the clip, which the creator can nudge in OpenShot and later edits keep |
 | Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; no metadata yet |
 | Reference video | Yes | Planned: the creator's rebuild of Hypit |
-| B-roll and stock | 16 stock sources, CLIP search | The creator's own assets only |
+| B-roll and stock | 16 stock sources, CLIP search | The creator's own images and clips on a B-roll track, anchored to what is said and moved by later edits; no stock |
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music |
 | Generated pictures and video | Many providers | None |
 | Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; aspect and loudness per platform |
@@ -163,6 +163,14 @@ The format the creator posts most, and the shortest path from what exists.
   matched to what is being said; stock (Pexels, Pixabay, with the creator's
   free keys) only if they want it. Clips sit on a B-roll track, anchored to the
   transcript like graphics, so edits move them too.
+  *Status:* built and checked (2026-11-01), from the creator's own files: a
+  storyboard scene cuts away as its words are said, an edit at a moment of the
+  recording. Each fills the frame with its own sound turned down, and later
+  edits move graphics and B-roll with the cut. Checked through OpenShot's
+  engine on the first short: a photo and a clip came in on their words, the
+  speaker's voice carried on under the clip, and after an edit removed 2.13 s
+  before them both moved up 2.13 s. No stock yet, and nothing helps the agent
+  see what a clip shows (see findings).
 - **Cutting to the beat.** Beat detection on the music, so fashion and
   lifestyle reels cut on the beat; cuts stay ordinary clip boundaries.
 - **A look per video:** a colour LUT as an OpenShot effect the creator can
