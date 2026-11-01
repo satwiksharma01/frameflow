@@ -279,7 +279,76 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(ir["project"]["fps"], 30)                       # the footage's own rate
 
 
+class TestCuttingToTheBeat(unittest.TestCase):
+    GRID = [round(0.1 + 0.5 * k, 6) for k in range(60)]     # 120 BPM from 0.1 s, every beat on a frame
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.folder = Path(self.tmp.name)
+        speak = mock.patch.object(produce.voiceover, "speak", lambda text, out, voice=None: _tone(out, 1.0))
+        speak.start()
+        self.addCleanup(speak.stop)
+
+    def _build(self, scenes: list[dict], grid: list[float], inputs: dict | None = None) -> dict:
+        board = {"script": "s", "music": {"path": "song.mp3", "cut_to_beat": True}, "scenes": scenes}
+        validate(board, "storyboard")
+        inputs = {"footage": [], "assets": [], "music": [{"path": "C:/x/song.mp3", "duration": 60.0}], **(inputs or {})}
+        with mock.patch.object(produce.beats, "beats", lambda path: grid):
+            return produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
+
+    def test_each_cut_moves_to_the_nearest_beat(self):
+        ir = self._build([{"visual": {"type": "title", "text": "One"}, "duration": 2.0, "reason": "r"},
+                          {"visual": {"type": "title", "text": "Two"}, "duration": 1.3, "reason": "r"}], self.GRID)
+        titles = next(t for t in ir["tracks"] if t["id"] == "Graphics")["clips"]
+        # 2.0 s ends nearest the beat at 2.1 s; then 2.1 + 1.3 = 3.4 s, nearest the beat at 3.6 s.
+        self.assertEqual([(c["timeline_start"], c["timeline_duration"]) for c in titles], [(0.0, 2.1), (2.1, 1.5)])
+
+    def test_a_cut_never_shortens_the_narration(self):
+        # One second of voice needs 1.5 s; the nearer beat, at 1.4 s, would cut off its tail.
+        grid = [round(0.2 + 0.6 * k, 6) for k in range(60)]
+        ir = self._build([{"visual": {"type": "title", "text": "Meet it"}, "narration": "Meet it", "reason": "r"}], grid)
+        self.assertEqual(next(t for t in ir["tracks"] if t["id"] == "Graphics")["clips"][0]["timeline_duration"], 2.0)
+
+    def test_a_cut_never_runs_past_the_end_of_a_clip(self):
+        clip = {"assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 2.0, "size": "1920x1080"}]}
+        ir = self._build([{"visual": {"type": "asset", "path": "walk.mp4"}, "reason": "r"}], self.GRID, clip)
+        # The nearer beat, at 2.1 s, needs more of the 2 s clip than there is.
+        self.assertEqual(ir["tracks"][0]["clips"][0]["source_out"], 1.6)
+
+    def test_a_cut_in_footage_that_is_heard_does_not_move_into_a_word(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [
+            {"start": 1.0, "end": 1.5, "text": " Hello"}, {"start": 1.5, "end": 2.0, "text": " there."},
+            {"start": 2.2, "end": 2.6, "text": " Again"}]}))
+        footage = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7, "folder": "f"}]}
+
+        def cut(grid):
+            ir = self._build([{"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 2.1},
+                               "reason": "r"}], grid, footage)
+            return ir["tracks"][0]["clips"][0]["source_out"]
+
+        # The pause after "there." runs 2.0-2.2 s: the cut moves to a beat inside it...
+        self.assertEqual(cut([round(0.5 * k, 6) for k in range(60)]), 2.0)
+        # ...but not to the nearest beats when they are over "Again" or "there."
+        self.assertEqual(cut([round(0.25 + 0.5 * k, 6) for k in range(60)]), 2.1)
+
+
 class TestRequests(unittest.TestCase):
+    def test_the_storyboard_request_gives_the_music_s_tempo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / produce.INPUTS_FILE).write_text(json.dumps(
+                {"prompt": "p", "script": None, "footage": [], "assets": [],
+                 "music": [{"path": "C:/x/song.mp3", "duration": 60.0}]}), encoding="utf-8")
+            (folder / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+            with mock.patch.object(produce.beats, "beats", lambda path: [0.1 + 0.5 * k for k in range(100)]):
+                request = produce.storyboard_request(folder).read_text(encoding="utf-8")
+        self.assertIn("`song.mp3` is at 120 BPM, a beat every 0.50 s", request)
+        self.assertIn("`cut_to_beat`", request)
+
     def test_open_questions_stop_the_storyboard(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)

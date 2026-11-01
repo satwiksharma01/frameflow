@@ -24,7 +24,11 @@
       "description": "Optional background music for the whole video: one of the creator's music files.",
       "properties": {
         "path": { "type": "string", "minLength": 1 },
-        "volume_db": { "type": "number", "maximum": 0, "description": "Optional; -18 under narration and -6 without when absent." }
+        "volume_db": { "type": "number", "maximum": 0, "description": "Optional; -18 under narration and -6 without when absent." },
+        "cut_to_beat": {
+          "type": "boolean",
+          "description": "Optional: true when the video is cut to the music. Each cut moves to the nearest beat, unless that would cut into a word that is heard, the narration or the end of a clip."
+        }
       }
     },
     "spoken_captions": {

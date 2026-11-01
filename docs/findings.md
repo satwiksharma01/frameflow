@@ -279,6 +279,42 @@ Not yet: stock footage (Pexels, Pixabay, with the creator's own keys), and
 help seeing what a clip shows - the agent can look at images, but a clip it
 can only judge by its name.
 
+## Cutting to the beat
+
+A storyboard whose music sets `cut_to_beat` has every cut moved onto a beat of
+that music. The cuts stay ordinary clip boundaries; nothing else in the project
+marks the beat.
+
+- **Frameflow finds the beat itself.** A beat tracker in numpy (which OpenCV
+  already brings), after Ellis's dynamic-programming method (2007): how much
+  louder each 12 ms is than the last, across 40 bands of pitch; the tempo at
+  which that best repeats, preferring one near 120 BPM; then the run of beats
+  that sits on strong onsets while keeping to the tempo. On drum loops made at
+  92 to 140 BPM it finds every beat and none between them, about 10 ms early
+  (16 ms at worst, half a frame at 30 fps), and the tempo within 1 BPM.
+- **Each cut moves to the nearest beat it can, at most a beat away.** A scene
+  keeps what its narration needs and at least half its length, and takes no
+  more of its footage or clip than there is. Over footage that is heard, the
+  cut does not move across a word: speech wins over the beat. Under narration
+  the recording is not heard, so its words do not hold the cut.
+- **The agent plans in beats.** The storyboard request gives each music file's
+  tempo and beat length and asks for scenes a whole number of beats long, so
+  the cuts hardly need to move.
+- Checked on the creator's 120 BPM track (`adrenaline_soundridemusic.mp3`): the
+  onset strength at the beats found is 2.0 standard deviations above average,
+  and -0.3 half-way between them; shifting the whole grid either way only
+  lowers it. A six-scene test reel (two titles, a photo, the creator talking,
+  a narrated still, a clip), built and rendered through OpenShot's engine: 4 of
+  the 5 cuts, and the end, land 11-16 ms after a beat, on the nearest frame;
+  the cut after the talking clip stays 219 ms off, because the beats either
+  side of it fall inside "editor" and "where". In the render, the beats found
+  in the reel's own sound are the song's, and ffmpeg's scene detection finds
+  the picture changing 11-14 ms after them.
+
+Not yet: cutting on the bar (the "one") rather than on any beat; cards and
+B-roll come in on their words, not on the beat; an edit does not put cuts back
+on the beat; music whose tempo changes partway has not been tried.
+
 ## Captions, word by word
 
 `--captions` on a first cut, or `"spoken_captions": true` in a storyboard,

@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import broll, captions, first_cut, hyperframes, reframe, voiceover
+from project import beats, broll, captions, first_cut, hyperframes, reframe, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
@@ -195,13 +195,20 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
     brand_note = (f"- Titles, cards and captions use the creator's brand kit, {json.dumps(kit, default=str)}. "
                   "Use its font, colours and logo in any composition you write too, with the font and logo "
                   "files copied into the composition's folder.\n" if hyperframes.BRAND_FILE.exists() else "")
+    found = [(Path(m["path"]).name, beats.beats(m["path"])) for m in inputs["music"]]
+    music_note = ("- When the video is cut to its music - a fashion or lifestyle reel, a product montage - set the "
+                  "music's `cut_to_beat`: each cut then moves to the nearest beat, unless that would cut into a word "
+                  "that is heard, the narration or the end of a clip. Make scenes a whole number of beats long: "
+                  + "; ".join(f"`{name}` is at {beats.tempo(t):.0f} BPM, a beat every {60 / beats.tempo(t):.2f} s"
+                              if len(t) > 1 else f"`{name}` has no steady beat" for name, t in found)
+                  + ".\n" if found else "")
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
-{brand_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
+{brand_note}{music_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
@@ -287,6 +294,27 @@ def _said_at(words: list[dict], phrase: str) -> float | None:
     return None
 
 
+def _to_beat(beat_times: list[float], cursor: float, length: float, needed: float,
+             longest: float = float("inf"), words: list[dict] = (), offset: float = 0.0) -> float:
+    """The scene's length, changed so the cut after it lands on the nearest beat it can, at most a beat away.
+
+    The scene keeps what its narration needs and at least half its length, and takes no more of its
+    footage or clip than there is. Over footage that is heard, the cut does not move across a word
+    (`words` are timed in the recording, `offset` seconds from the timeline).
+    """
+    if len(beat_times) < 2:
+        return length
+    cut, beat = cursor + length, 60 / beats.tempo(beat_times)
+    for b in sorted(beat_times, key=lambda b: abs(b - cut)):
+        low, high = sorted((cut, b))
+        if high - low > beat:
+            break
+        if max(needed, length / 2) <= b - cursor <= longest + 1e-6 and \
+                not any(w["start"] - offset < high and low < w["end"] - offset for w in words):
+            return round(b - cursor, 6)
+    return length
+
+
 def _crop_keys(folder: Path, footage: dict, width: int, height: int) -> list[dict]:
     """Where a recording's crop goes to keep the face in frame, worked out once per recording and size."""
     path = folder / footage["folder"] / f"framing-{width}x{height}.json"
@@ -305,7 +333,10 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                                if inputs["footage"] else 30)
     voice_name = board.get("voice") or next(iter(voiceover.voices()), None)   # the first listed: Piper's when installed
     main, graphics, fixed_captions, voice, said, cutaways = [], [], [], [], [], []
-    cursor, problems = 0.0, []
+    cursor, problems, cuts = 0.0, [], []
+    cut_to_beat = board.get("music", {}).get("cut_to_beat")
+    beat_times = [round(frame_align(b, fps), 6) for b in
+                  beats.beats(_match(board["music"]["path"], inputs["music"], "path")["path"])] if cut_to_beat else []
 
     for n, scene in enumerate(board["scenes"], start=1):
         visual = scene["visual"]
@@ -324,9 +355,14 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
             if length + 1e-6 < needed:
                 problems.append(f"scene {n}: the narration needs {needed:.1f}s but the footage span "
                                 f"is {length:.1f}s; lengthen the span or shorten the narration")
+            if beat_times:      # under narration the recording is not heard, so its words do not hold the cut
+                words = [] if spoken else json.loads(
+                    (folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))["words"]
+                length = _to_beat(beat_times, cursor, length, needed, f["duration"] - start, words, start - cursor)
+                end = round(start + length, 6)
             clip = {"source": f["source"], "source_in": start, "source_out": end}
         else:
-            length = frame_align(max(scene.get("duration", 0.0), needed), fps)
+            length = _to_beat(beat_times, cursor, frame_align(max(scene.get("duration", 0.0), needed), fps), needed)
             clip = None
             if visual["type"] == "asset":
                 a = _match(visual["path"], inputs["assets"], "path")
@@ -342,6 +378,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                     if start + length > a["duration"] + 1e-3:
                         problems.append(f"scene {n}: the clip has {a['duration'] - start:.1f}s from "
                                         f"{start:.1f}s, but the scene needs {length:.1f}s")
+                    length = _to_beat(beat_times, cursor, length, needed, a["duration"] - start)
                     clip = {"source": a["path"], "source_in": start, "source_out": start + length}
             else:
                 params = ({"layout": "title"} if visual["type"] == "title"
@@ -411,10 +448,17 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                           "timeline_duration": spoken[1],
                           **({"volume_db": gain} if (gain := _level(spoken[0])) else {})})
         cursor = round(cursor + length, 6)
+        cuts.append(cursor)
 
     if problems:
         raise ProduceError("the storyboard needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
 
+    if cut_to_beat and len(cuts) > 1:
+        off = [str(n) for n, c in enumerate(cuts[:-1], start=1) if not any(abs(c - b) < 1e-3 for b in beat_times)]
+        print(f"    {len(cuts) - 1 - len(off)} of {len(cuts) - 1} cuts on the beat"
+              + (f", at {beats.tempo(beat_times):.0f} BPM" if len(beat_times) > 1 else ": the music has no steady beat")
+              + (f"; the cut after scene {', '.join(off)} stays put: a word, the narration or the end of a clip "
+                 f"is in the way, or the music has stopped" if off and len(beat_times) > 1 else ""))
     tracks = [("V1", "video", main), ("Graphics", "graphics", graphics),
               ("Captions", "captions", fixed_captions), ("Voice", "audio", voice)]
     if "music" in board:
