@@ -83,7 +83,9 @@ class TestEditingAProject(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.folder = Path(self.tmp.name)
         self.mlt = self.folder / "project.mlt"
-        shutil.copy(SHOTCUT_SAVED, self.mlt)
+        # The fixture names its media relative to examples/, and the copy is not there.
+        self.mlt.write_text(SHOTCUT_SAVED.read_text(encoding="utf-8").replace(
+            "../media/", MAIN_MEDIA.parent.as_posix() + "/"), encoding="utf-8")
         shutil.copy(sidecar_path(SHOTCUT_SAVED), sidecar_path(self.mlt))
         # A timing map for the main recording, so nothing needs transcribing.
         (self.folder / "timing.json").write_text(json.dumps({
