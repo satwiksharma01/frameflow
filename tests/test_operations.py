@@ -135,6 +135,13 @@ class TestRestore(unittest.TestCase):
         self.assertEqual(spans(result), [(0, 4), (6, 10), (12, 15)])
         self.assertEqual(result["tracks"][0]["clips"][1]["transform"], {"fill": True, "position": {"x": 0.05}})
 
+    def test_what_is_put_back_is_as_loud_as_the_recording_around_it(self):
+        project = ir((0, 4), (12, 15))
+        for clip in project["tracks"][0]["clips"]:
+            clip["volume_db"] = 13.2
+        result = run(project, op("restore", 6, 10))
+        self.assertEqual(result["tracks"][0]["clips"][1]["volume_db"], 13.2)
+
     def test_restoring_what_is_already_there_is_reported(self):
         self.assertIn("already in the cut", check(op("restore", 1, 3), self.BASE, UNCHANGED)[0])
 

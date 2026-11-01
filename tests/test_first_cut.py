@@ -9,6 +9,7 @@ Run with: python -m unittest discover tests
 """
 import copy
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,7 +31,7 @@ from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
 from project.providers.anthropic_provider import AnthropicProvider, _echoable
 from project.providers.openai_provider import OpenAICompatibleProvider
-from project import transcribe
+from project import media, transcribe
 from project.transcribe import dtw_preset, parse_silencedetect, whisper_json_to_segments, word_timings
 from project.validate import ValidationError, validate
 
@@ -68,6 +69,30 @@ class TestChooseCfrRate(unittest.TestCase):
 
     def test_above_the_highest_rate_caps_at_60(self):
         self.assertEqual(choose_cfr_rate(90.0), 60)
+
+
+class TestLoudness(unittest.TestCase):
+    def test_speech_is_brought_to_the_platforms_level(self):
+        self.assertEqual(media.level_db(-20.0, -10.0), 6.0)
+        self.assertEqual(media.level_db(-10.0, -0.5), -4.0)          # too loud: turned down
+
+    def test_it_stops_where_the_peaks_would_clip(self):
+        # The 5.4-minute test recording: -31.6 LUFS, peaking at -14.24 dBTP.
+        self.assertEqual(media.level_db(-31.6, -14.24), 13.2)
+
+    def test_silence_is_left_alone(self):
+        self.assertEqual(media.level_db(float("-inf"), float("-inf")), 0.0)
+
+    def test_loudness_is_measured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tone = Path(tmp) / "tone.wav"
+            subprocess.run([media._find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                            "sine=frequency=1000:duration=3", str(tone)], check=True)
+            lufs, peak = media.loudness(tone)
+        # ffmpeg's sine is 1/8 of full scale (-18.06 dBFS); a 1 kHz sine reads 3.01 dB under its peak.
+        self.assertAlmostEqual(lufs, -21.07, delta=0.3)
+        # Mono, so it plays into both channels 3 dB down: as loud, with lower peaks.
+        self.assertAlmostEqual(peak, -21.07, delta=0.3)
 
 
 class TestTranscriptionParsing(unittest.TestCase):

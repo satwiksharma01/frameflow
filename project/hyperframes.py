@@ -11,19 +11,30 @@ What is rendered:
     (its index.html), rendered as it is, at the project's frame rate.
   - otherwise a text card showing the clip's `text`, sized to the project.
 
+Cards and captions take the creator's brand kit, brand/brand.json (its schema
+is project/schema/brand.schema.json): their font, colours, logo and caption
+style. What it leaves out keeps Frameflow's own look.
+
 Renders are cached by content in the project's graphics/ folder, so building
 the same project again does not render again.
 """
 import hashlib
 import html
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 from project.compile_mlt import fps_to_fraction
+from project.transcribe import REPO_ROOT
+from project.validate import ValidationError, validate
 
 VERSION = "0.8.199"
 GRAPHICS_DIR = "graphics"
+BRAND_FILE = REPO_ROOT / "brand" / "brand.json"
+BRAND = {"font": None, "text": "#FFFFFF", "accent": "#FFE14D", "background": None, "logo": None,
+         "uppercase_captions": True}
+_FONT_SUFFIXES = {".ttf", ".otf", ".woff", ".woff2"}
 
 
 def _rate(fps: float) -> str:
@@ -37,15 +48,16 @@ _CARD = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width={w},height={h}"><title>card</title>
 <style>
-*{{box-sizing:border-box;margin:0}}
-html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent;font-family:Arial,Helvetica,sans-serif}}
-#root{{width:{w}px;height:{h}px;position:relative}}
+{font_face}*{{box-sizing:border-box;margin:0}}
+html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent;font-family:{family}}}
+#root{{width:{w}px;height:{h}px;position:relative;background:{screen}}}
 #card{{position:absolute;left:50%;{anchor};width:max-content;max-width:{max_w}px;padding:{pad_y}px {pad_x}px;
-  border-radius:{radius}px;background:rgba(16,24,39,.78);color:#fff;font-size:{size}px;font-weight:700;
+  border-radius:{radius}px;background:{plate};color:{color};font-size:{size}px;font-weight:700;
   line-height:1.2;text-align:center;opacity:0;transform:{base}}}
+#logo{{display:block;margin:0 auto {pad_y}px;max-width:100%;max-height:{logo_h}px}}
 </style></head>
 <body><div id="root" data-composition-id="main" data-start="0" data-duration="{d}" data-width="{w}" data-height="{h}" data-fps="{fps}">
-<div id="card" class="clip" data-start="0" data-duration="{d}" data-track-index="0">{text}</div></div>
+<div id="card" class="clip" data-start="0" data-duration="{d}" data-track-index="0">{logo}{text}</div></div>
 <script>
 const card = document.getElementById("card"), D = {d}, IN = 0.4, OUT = 0.3;
 let now = 0;
@@ -71,13 +83,54 @@ class HyperFramesError(Exception):
     pass
 
 
+def brand() -> dict:
+    """The creator's brand kit over Frameflow's own look, its font file and logo as absolute Paths."""
+    if not BRAND_FILE.exists():
+        return dict(BRAND)
+    try:
+        kit = json.loads(BRAND_FILE.read_text(encoding="utf-8"))
+        validate(kit, "brand")
+    except (json.JSONDecodeError, ValidationError) as e:
+        raise HyperFramesError(f"the brand kit {BRAND_FILE} needs fixing: {e}") from e
+    for key in ("font", "logo"):
+        if key in kit and (key == "logo" or Path(kit[key]).suffix.lower() in _FONT_SUFFIXES):
+            kit[key] = (BRAND_FILE.parent / kit[key]).resolve()
+            if not kit[key].is_file():
+                raise HyperFramesError(f"the brand kit's {key}, {kit[key]}, is not there")
+    return {**BRAND, **kit}
+
+
+def brand_css(kit: dict, fallback: str) -> tuple[str, str]:
+    """The @font-face for the kit's font file, if it has one, and the font-family list to use."""
+    font = kit["font"]
+    if isinstance(font, Path):      # weights 100-900 so the browser does not thicken it a second time
+        return (f'@font-face{{font-family:"Brand";src:url("brand-font{font.suffix.lower()}");'
+                f'font-weight:100 900}}\n', f'"Brand",{fallback}')
+    return "", f'"{font}",{fallback}' if font else fallback
+
+
+def brand_files(kit: dict, composition: Path) -> None:
+    """Copy the kit's font and logo beside a composition's index.html, where its page looks for them."""
+    for key in ("font", "logo"):
+        if isinstance(kit[key], Path):
+            shutil.copyfile(kit[key], composition / f"brand-{key}{kit[key].suffix.lower()}")
+
+
 def card_html(text: str, width: int, height: int, fps: float, duration: float,
-              layout: str = "lower") -> str:
-    """A text card: "lower" sits low in the frame over footage, "title" is centred and larger."""
+              layout: str = "lower", kit: dict = BRAND) -> str:
+    """A text card: "lower" sits low in the frame over footage, "title" is centred and larger,
+    on the kit's background and under its logo."""
     unit = min(width, height) / 1080      # sized for 1080 on the short side; portrait fits too
     title = layout == "title"
+    font_face, family = brand_css(kit, "Arial,Helvetica,sans-serif")
+    logo = title and isinstance(kit["logo"], Path)
     return _CARD.format(
         w=width, h=height, fps=_rate(fps), d=round(duration, 6), text=html.escape(text),
+        font_face=font_face, family=family, color=kit["text"],
+        screen=title and kit["background"] or "transparent",
+        plate=f"{kit['background']}C7" if kit["background"] else "rgba(16,24,39,.78)",     # C7: 78% opaque
+        logo=f'<img id="logo" src="brand-logo{kit["logo"].suffix.lower()}" alt="">' if logo else "",
+        logo_h=round(240 * unit),
         anchor="top:50%" if title else f"bottom:{round(height * 0.11)}px",
         base="translate(-50%,-50%)" if title else "translateX(-50%)",
         max_w=round(width * 0.84), pad_y=round(26 * unit), pad_x=round(44 * unit),
@@ -125,12 +178,14 @@ def render_clip(clip: dict, project: dict, folder: Path) -> Path:
     else:
         if not clip.get("text"):
             raise HyperFramesError(f"clip {clip['id']!r} has neither text nor a composition")
+        kit = brand()
         page = card_html(clip["text"], project["width"], project["height"], fps,
                          clip["timeline_duration"],
-                         (clip.get("generator_params") or {}).get("layout", "lower"))
+                         (clip.get("generator_params") or {}).get("layout", "lower"), kit)
         source = graphics / "cards" / hashlib.sha256(page.encode()).hexdigest()[:16]
         source.mkdir(parents=True, exist_ok=True)
         (source / "index.html").write_text(page, encoding="utf-8")
+        brand_files(kit, source)
     return render_cached(source, folder, fps)
 
 

@@ -20,6 +20,7 @@ by word), then Voice and Music as audio tracks. It is an ordinary Frameflow
 project afterwards: edit it by hand, or with project.edit.
 """
 import argparse
+import functools
 import hashlib
 import json
 import sys
@@ -28,7 +29,7 @@ from pathlib import Path
 from project import captions, first_cut, hyperframes, reframe, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
-from project.media import MediaError, analyze, probe, still_to_clip
+from project.media import MediaError, analyze, level_db, loudness, probe, still_to_clip
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
 from project.validate import ValidationError, load_schema, validate
@@ -188,13 +189,17 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
         parts.append(f"## Recording `{f['name']}`\n\nWhat is said, in source seconds:\n\n{said}\n\n"
                      f"Measured pauses (start and end footage spans inside these): {pauses or 'none'}\n")
     voices = voiceover.voices()
+    kit = {k: v for k, v in hyperframes.brand().items() if v is not None}
+    brand_note = (f"- Titles, cards and captions use the creator's brand kit, {json.dumps(kit, default=str)}. "
+                  "Use its font, colours and logo in any composition you write too, with the font and logo "
+                  "files copied into the composition's folder.\n" if hyperframes.BRAND_FILE.exists() else "")
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
-- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
+{brand_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
 
   ```
@@ -257,6 +262,12 @@ def _seconds(path: Path) -> float:
     return float(probe(path)["format"]["duration"])
 
 
+@functools.cache
+def _level(path: Path | str) -> float:
+    """The volume that brings this recording or voice line to the platforms' level."""
+    return level_db(*loudness(path))
+
+
 def _crop_keys(folder: Path, footage: dict, width: int, height: int) -> list[dict]:
     """Where a recording's crop goes to keep the face in frame, worked out once per recording and size."""
     path = folder / footage["folder"] / f"framing-{width}x{height}.json"
@@ -273,7 +284,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     width, height = SIZES[brief["aspect"]]
     fps = brief.get("fps") or (round(analyze(inputs["footage"][0]["source"]).nominal_fps)
                                if inputs["footage"] else 30)
-    voice_name = board.get("voice")
+    voice_name = board.get("voice") or next(iter(voiceover.voices()), None)   # the first listed: Piper's when installed
     main, graphics, fixed_captions, voice, said = [], [], [], [], []
     cursor, problems = 0.0, []
 
@@ -323,6 +334,8 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
             clip.update(timeline_start=cursor, timeline_duration=round(clip["source_out"] - clip["source_in"], 6))
             if spoken:
                 clip["volume_db"] = UNDER_NARRATION_DB
+            elif visual["type"] == "footage" and (gain := _level(f["source"])):
+                clip["volume_db"] = gain
             if brief["aspect"] != "16:9":       # a reel or a square post: footage fills the frame
                 clip["transform"] = {"fill": True}
                 if visual["type"] == "footage":     # ...with the speaker kept in it
@@ -342,7 +355,8 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
         if spoken:
             voice.append({"source": spoken[0].resolve().as_posix(), "source_in": 0.0,
                           "source_out": spoken[1], "timeline_start": round(cursor + VOICE_LEAD_SECONDS, 6),
-                          "timeline_duration": spoken[1]})
+                          "timeline_duration": spoken[1],
+                          **({"volume_db": gain} if (gain := _level(spoken[0])) else {})})
         cursor = round(cursor + length, 6)
 
     if problems:

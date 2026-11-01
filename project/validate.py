@@ -7,7 +7,7 @@ Two layers:
      source_out > source_in and non-overlapping clips within a track.
 
 Usage:
-    python -m project.validate <file.json> --kind ir|transcript|edit_plan|operations|brief|storyboard|shorts_plan
+    python -m project.validate <file.json> --kind ir|transcript|edit_plan|operations|brief|storyboard|shorts_plan|brand
 """
 import argparse
 import json
@@ -25,6 +25,7 @@ SCHEMA_FILES = {
     "brief": "brief.schema.json",
     "storyboard": "storyboard.schema.json",
     "shorts_plan": "shorts_plan.schema.json",
+    "brand": "brand.schema.json",
 }
 
 # Far below one frame at any realistic frame rate, so it cannot mask a real

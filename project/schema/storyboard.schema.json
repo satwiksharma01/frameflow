@@ -96,7 +96,7 @@
       "type": "object",
       "required": ["type", "text"],
       "additionalProperties": false,
-      "description": "Large centred text on black, rendered by HyperFrames - an opening title, a key number, a closing call to action.",
+      "description": "Large centred text on the brand kit's background (black without one), under its logo, rendered by HyperFrames - an opening title, a key number, a closing call to action.",
       "properties": {
         "type": { "const": "title" },
         "text": { "type": "string", "minLength": 1 }

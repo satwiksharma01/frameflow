@@ -46,7 +46,7 @@ from project.editor_agent import (
 )
 from project.editors import DEFAULT, EDITORS, Editor
 from project.hyperframes import HyperFramesError
-from project.media import MediaError, analyze, choose_cfr_rate, normalize_to_cfr
+from project.media import TARGET_LUFS, MediaError, analyze, choose_cfr_rate, level_db, loudness, normalize_to_cfr
 from project.openshot_template import ProfileError
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
@@ -173,6 +173,14 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
         "cfr" if source.resolve() == video.resolve() else "normalized_from_vfr", name,
         source_duration=info.duration_seconds,
     )
+    if editor.suffix == ".osp":         # Shotcut projects cannot carry a clip's volume yet
+        lufs, peak = loudness(source)
+        gain = level_db(lufs, peak)
+        if gain:
+            for clip in ir["tracks"][0]["clips"]:
+                clip["volume_db"] = gain
+            print(f"    speech at {lufs:.1f} LUFS, set to {lufs + gain:.1f} ({gain:+.1f} dB)"
+                  + ("; any louder and its peaks would clip" if lufs + gain < TARGET_LUFS - 0.5 else ""))
     if vertical:
         _step("Following the face for the vertical crop")
         ir["project"]["width"], ir["project"]["height"] = VERTICAL

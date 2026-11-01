@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/brand.schema.json",
+  "title": "FrameflowBrandKit",
+  "description": "The creator's look, used by every title, card and caption Frameflow renders. Every field is optional: what is left out keeps Frameflow's own look. File paths are relative to this file; use forward slashes.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "font": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\"'`;{}<>\\\\]+$",
+      "description": "A font file (.ttf, .otf, .woff or .woff2), or the name of a font installed on this computer."
+    },
+    "text": { "$ref": "#/$defs/colour", "description": "Colour of the text; white when absent." },
+    "accent": { "$ref": "#/$defs/colour", "description": "Colour of the word being said in captions; yellow (#FFE14D) when absent." },
+    "background": {
+      "$ref": "#/$defs/colour",
+      "description": "Colour of title screens and of the plate behind cards; when absent, titles are on black and cards on dark grey."
+    },
+    "logo": { "type": "string", "minLength": 1, "description": "An image file, shown above the text of title screens." },
+    "uppercase_captions": { "type": "boolean", "description": "Captions in capitals; true when absent." }
+  },
+  "$defs": {
+    "colour": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+  }
+}

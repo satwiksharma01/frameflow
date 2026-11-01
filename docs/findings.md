@@ -182,6 +182,37 @@ product cards, never for the whole video, so the project stays editable.
 Not yet: graphics in a first cut (today they come from an edit), and audio
 from a composition (rendered `.mov` files are picture only).
 
+## A brand kit on every title, card and caption
+
+The creator's look lives in one file, `brand/brand.json` (schema:
+`project/schema/brand.schema.json`): a font, text, accent and background
+colours, a logo, and whether captions are in capitals. Cards and captions read
+it when they are rendered, so changing it restyles the next build and leaves
+built projects alone. The storyboard request passes it to the agent, so the
+compositions it writes match. With no kit, everything looks as before.
+
+- **The font and logo travel with each composition.** HyperFrames renders a
+  folder, so both are copied in beside `index.html` under fixed names
+  (`brand-font.ttf`, `brand-logo.svg`, ...). A font file is declared for weights
+  100-900, so Chrome draws it as it is instead of thickening it for bold.
+- **HyperFrames drops the page's own background.** The first branded build put
+  the background colour on `html, body`; the title screen rendered black, with
+  the colour showing only on the card's plate. On the composition's root
+  element it fills the frame.
+- **Dark caption text needs a light outline.** With the kit's dark text and the
+  black outline, captions over the footage could not be read. The outline is
+  now picked against the text colour: black around light text, white around
+  dark.
+- Checked: the jacket reel rebuilt with a sample kit (Georgia Bold from a font
+  file, cream, orange, an SVG logo, lower-case captions), with frames rendered
+  through OpenShot's engine beside the plain build: title screens in the brand
+  colour under the logo, captions in the font with the accent on the word being
+  said, and the plain build unchanged.
+
+Not yet: a kit per video (one kit applies to everything; swap the file for
+another brand), and restyling a built project when the kit changes (a later
+edit renders new caption lines in the new style beside the old ones).
+
 ## Captions, word by word
 
 `--captions` on a first cut, or `"spoken_captions": true` in a storyboard,
@@ -197,8 +228,9 @@ move, trim or delete one like footage.
   to back in one transparent .mov, and each clip plays its own span of it.
 - **Where the words come from.** For recordings, Whisper's word timings
   (`timing.json`). They have no punctuation or capitals, so captions are
-  drawn in capitals. For narration, the Windows voice's own progress events,
-  saved beside each .wav: exact, and in the script's own spelling ("$129"
+  drawn in capitals. For narration, the voice's own timings (Piper's phoneme
+  durations, or the Windows voice's progress events), saved beside each .wav:
+  exact, and in the script's own spelling ("$129"
   stays "$129", where Whisper would write the words it heard).
 - **System.Speech reports word positions as if the audio were 16 kHz**,
   whatever the file's rate. Measured against the pauses in files written at
@@ -341,6 +373,36 @@ showed:
   "So", in a measured 0.25 s pause; heard back, it still opens on "So", whose
   soft end runs under the silence threshold.
 
+## Speech at the platforms' level
+
+YouTube, Instagram and TikTok play speech at about -14 LUFS, and a quiet video
+stays quiet beside everything else in the feed. Frameflow measures each
+recording and each voice line with ffmpeg's loudnorm and sets a clip volume
+(`volume_db`) that brings it toward -14 LUFS, stopping where its true peaks
+would pass -1 dBTP. It is an ordinary clip setting: OpenShot shows it as the
+clip's volume, it survives a save and later edits, and footage put back by an
+edit gets the volume of the recording around it. First cuts, shorts, voice
+lines and footage in prompt-made videos get it; Shotcut projects do not yet
+(its compiler does not write clip volume).
+
+- **OpenShot keeps loudness exactly.** Rendered tones at +6 and +13.2 dB came
+  out +6.00 and +13.20 louder, so volumes above 0 dB work. A mono file plays
+  into both channels 3 dB down each: just as loud, with peaks 3 dB lower. So
+  a file is measured as it will play, converted to stereo first; without that,
+  Piper's mono lines had their peaks overstated by 3 dB and were turned down.
+- **Volume alone stops short of -14 on peaky speech.** The test recording reads
+  -31.6 LUFS with a true peak of -14.2 dBTP; +13.2 dB is all it can take, and
+  it lands at -18.4. Piper normalizes its output to full scale, so its lines
+  get about +2 dB. Rendered through libopenshot: the three shorts went from
+  -31.6 to -18.4, -18.0 and -18.8 LUFS, peaks -1.1 to -1.8 dBTP; the Piper reel
+  from -19.4 to -16.3, peak -1.0. Getting to -14 needs a limiter or compressor
+  on the voice. OpenShot has a Compressor effect, but `edit` refuses projects
+  with effects today, so adding one means teaching edits to keep effects
+  first.
+- The joins still check clean when louder: 2 of 2, 3 of 3.
+- Measuring the 5.4-minute recording takes about 10 s; each short measures it
+  again.
+
 ## OpenWhispr: transcription, and talking to Frameflow
 
 OpenWhispr (OpenWhispr/openwhispr, MIT) is a dictation app built on
@@ -385,7 +447,8 @@ with a JSON file that the next stage checks:
    what is seen (a footage span, an image or clip, a HyperFrames title or
    composition), what the voice says, an optional caption. The creator
    confirms it.
-3. **Build**: Windows' built-in voice reads each scene's narration; a scene
+3. **Build**: Piper's voice (or, without it, a Windows voice) reads each
+   scene's narration; a scene
    lasts as long as its footage span, or as long as its narration takes. Images
    become clips with a slow push in. Titles and captions are rendered by
    HyperFrames. The project gets V1 (picture), Graphics, Captions, Voice and
@@ -426,10 +489,36 @@ Checked: a 9:16 product reel built from a prompt, an image and music - three
 scenes, 14.1 s - rendered through libopenshot, with the voice and music heard
 throughout and the titles, image and caption where the storyboard put them.
 
+A voice that can be posted (2026-10-31):
+
+- **Piper** (OHF-Voice/piper1-gpl, GPLv3, `pip install piper-tts`) reads
+  offline with a natural voice. Its voices carry their training data's
+  licence, and most English ones are non-commercial or unclear: hfc_female and
+  ryan are CC BY-NC-SA; amy, kusal, alan and jenny point elsewhere; lessac's
+  Blizzard licence is restrictive, and most voices are fine-tuned from lessac.
+  Trained on public-domain recordings: ljspeech, kristin, norman, john, bryce
+  (US) and cori (UK). Frameflow installs `en_US-ljspeech-high` by default.
+- **Word timings come from the voice itself.** Loaded with
+  `include_alignments=True`, Piper gives every phoneme's length in samples;
+  they add up exactly to the audio. Words are the runs of phonemes between
+  spaces (`^` and `$` open and close a sentence). To line them up with the
+  script, each script word is phonemized on its own to count its runs: "$129"
+  is said as three. On six reel-style lines the counts matched five times; in
+  "everyone... so," Piper runs two words together, and times are then spread
+  in proportion.
+- Loading the voice takes about 3 s, once per build; reading three sentences
+  took 1.1 s.
+
+Checked: the jacket reel rebuilt with Piper and spoken captions (3 scenes,
+11.1 s, 11 caption lines), rendered through libopenshot and transcribed with
+DTW word times. 24 of its 25 words were heard (Whisper wrote "shrubs" for
+"shrugs"); every caption line comes up within 0.09 s of its first word being
+heard, under 3 frames, and words were placed a median 0.08 s after Whisper
+heard them start.
+
 Not yet: an API mode (today the coding agent is the editor), stock footage and
-AI-generated pictures, a better voice than Windows' (Piper or a paid one, as
-another function in `voiceover.py`), word-by-word captions, and muting rather
-than -60 dB (a volume of 0 is not read back yet).
+AI-generated pictures, and muting rather than -60 dB (a volume of 0 is not
+read back yet).
 
 ## Deliberately not done
 

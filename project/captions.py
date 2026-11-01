@@ -25,18 +25,17 @@ TAIL_SECONDS = 0.3      # a line stays up this long after its last word,
 HOLD_SECONDS = 0.5      # or until the next line, if that starts this soon after
 LONGEST_WORD = 1.5      # Whisper can stretch one word over seconds of noise
 SHORTEST_LINE = 0.3     # a line up for less flickers, so it takes the word before it
-HIGHLIGHT = "#FFE14D"
 
 _PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width={w},height={h}"><title>captions</title>
 <style>
-*{{box-sizing:border-box;margin:0}}
+{font_face}*{{box-sizing:border-box;margin:0}}
 html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent}}
 #root{{width:{w}px;height:{h}px;position:relative}}
 .line{{position:absolute;left:50%;top:{y}px;transform:translate(-50%,-50%);width:max-content;max-width:{max_w}px;
-  display:none;text-align:center;font-family:"Arial Black",Arial,Helvetica,sans-serif;font-weight:900;
-  font-size:{size}px;line-height:1.15;color:#fff;-webkit-text-stroke:{stroke}px #000;paint-order:stroke fill;
+  display:none;text-align:center;font-family:{family};font-weight:900;
+  font-size:{size}px;line-height:1.15;color:{text};-webkit-text-stroke:{stroke}px {outline};paint-order:stroke fill;
   text-shadow:0 {shadow}px {blur}px rgba(0,0,0,.55)}}
 .line span{{display:inline-block;margin:0 {gap}px}}
 </style></head>
@@ -44,7 +43,7 @@ html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent}}
 <div id="lines" class="clip" data-start="0" data-duration="{d}" data-track-index="0"></div></div>
 <script>
 // [line start, line end, [[word start, word], ...]], in seconds of this render.
-const LINES = {lines}, D = {d}, POP = 0.12, EPS = {eps}, HIGHLIGHT = "{highlight}";
+const LINES = {lines}, D = {d}, POP = 0.12, EPS = {eps}, HIGHLIGHT = "{highlight}", TEXT = "{text}";
 const box = document.getElementById("lines");
 const els = LINES.map(([, , words]) => {{
   const line = document.createElement("div");
@@ -68,7 +67,7 @@ function show(t) {{
       const span = els[i].children[j], k = Math.min(1, Math.max(0, (t - at) / POP));
       span.style.opacity = j < said ? 1 : 0;
       span.style.transform = "scale(" + (0.7 + 0.3 * (1 - Math.pow(1 - k, 3))) + ")";
-      span.style.color = j === said - 1 ? HIGHLIGHT : "#fff";
+      span.style.color = j === said - 1 ? HIGHLIGHT : TEXT;
     }});
   }});
 }}
@@ -135,19 +134,30 @@ def lines(runs: list[dict], fps: float, max_chars: int) -> list[dict]:
     return found
 
 
-def page(found: list[dict], width: int, height: int, fps: float) -> tuple[str, list[int]]:
-    """One composition showing every line back to back, and the frame each line starts at in it."""
+def _outline(colour: str) -> str:
+    """Black around light text, white around dark, so captions read over any footage."""
+    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    return "#000000" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 else "#FFFFFF"
+
+
+def page(found: list[dict], width: int, height: int, fps: float,
+         kit: dict = hyperframes.BRAND) -> tuple[str, list[int]]:
+    """One composition showing every line back to back, in the brand kit's style, and the
+    frame each line starts at in it."""
     rows, offsets, offset = [], [], 0
     for line in found:
         offsets.append(offset)
         rows.append([offset / fps, (offset + line["end"] - line["start"]) / fps,
-                     [[(f - line["start"] + offset) / fps, text.upper()] for f, text in line["words"]]])
+                     [[(f - line["start"] + offset) / fps, text.upper() if kit["uppercase_captions"] else text]
+                      for f, text in line["words"]]])
         offset += line["end"] - line["start"]
     unit = min(width, height) / 1080
     portrait = height > width
+    font_face, family = hyperframes.brand_css(kit, '"Arial Black",Arial,Helvetica,sans-serif')
     html = _PAGE.format(
         w=width, h=height, fps=hyperframes._rate(fps), d=round(offset / fps, 6), eps=0.5 / fps,
-        lines=json.dumps(rows, ensure_ascii=False).replace("</", "<\\/"), highlight=HIGHLIGHT,
+        lines=json.dumps(rows, ensure_ascii=False).replace("</", "<\\/"), highlight=kit["accent"],
+        text=kit["text"], font_face=font_face, family=family, outline=_outline(kit["text"]),
         # Portrait: above the app's buttons and text at the bottom of a reel.
         y=round(height * (0.68 if portrait else 0.84)), max_w=round(width * 0.86),
         size=round((84 if portrait else 72) * unit), stroke=round(10 * unit), shadow=round(6 * unit),
@@ -164,10 +174,12 @@ def add(ir: dict, runs: list[dict], folder: Path) -> int:
     found = lines(runs, fps, 14 if width <= height else 28)
     if not found:
         return 0
-    html, offsets = page(found, width, height, fps)
+    kit = hyperframes.brand()
+    html, offsets = page(found, width, height, fps, kit)
     composition = folder / hyperframes.GRAPHICS_DIR / "captions" / hashlib.sha256(html.encode()).hexdigest()[:16]
     composition.mkdir(parents=True, exist_ok=True)
     (composition / "index.html").write_text(html, encoding="utf-8")
+    hyperframes.brand_files(kit, composition)
     movie = hyperframes.render_cached(composition, folder, fps).resolve().as_posix()
 
     track = next((t for t in ir["tracks"] if t["id"] == TRACK_ID), None)

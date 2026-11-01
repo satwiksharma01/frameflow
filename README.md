@@ -12,11 +12,11 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 ## What it does
 
-**First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision. Ask for captions and what you say pops in word by word, each line a clip on its own Captions track. Ask for a vertical cut and a landscape recording fills a 9:16 frame, framed on your face and moving smoothly when you move; the crop is a clip setting you can change in OpenShot, and your change is kept through later edits.
+**First cut.** Given a raw recording, Frameflow transcribes it, measures its silences, and has an editor — Claude Code, or any model you have an API key for — decide what to keep: dead air, false starts, abandoned takes, instructions to yourself. The result is an OpenShot project with each kept span as its own clip, and a written reason for every decision. Ask for captions and what you say pops in word by word, each line a clip on its own Captions track. Ask for a vertical cut and a landscape recording fills a 9:16 frame, framed on your face and moving smoothly when you move; the crop is a clip setting you can change in OpenShot, and your change is kept through later edits. Your voice is turned up toward the -14 LUFS that YouTube, Instagram and TikTok play at, as the clip's volume, stopping before it would clip.
 
 **Shorts from a long recording.** The editor picks the moments that stand on their own — each opening on a hook, starting and ending on a whole sentence — and each becomes its own vertical OpenShot project, framed on your face, with captions, built and checked like a first cut.
 
-**A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles and captions rendered by HyperFrames (for a reel, what is said pops in word by word), a voiceover read by a voice on your computer, and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
+**A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, titles and captions rendered by HyperFrames (for a reel, what is said pops in word by word), a voiceover read on your computer by Piper's natural voice (trained on public-domain recordings, so you can post it), and your music under it, each on its own track. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
 
 **Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Captions move with the cut. The previous version is always kept.
 
@@ -35,6 +35,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 | **OpenShot** | 4.0.x, in `C:\Program Files\OpenShot Video Editor` or `%LOCALAPPDATA%\Programs\OpenShot Video Editor`. Frameflow reads its profile list to name the project's size and frame rate the way OpenShot will recognise them |
 | **FFmpeg** | `ffmpeg` and `ffprobe`, on `PATH` or in `%LOCALAPPDATA%\Programs\ffmpeg\bin` |
 | **Transcription** | `python -m project.transcribe --install` fetches [OpenWhispr](https://github.com/OpenWhispr/openwhispr)'s build of whisper.cpp (1.2 MB, MIT, checksum-verified) into `tools/`, and the `ggml-large-v3-turbo-q5_0.bin` model (548 MB) into `models/` if there is none. Any `whisper-cli` already on `PATH`, or Shotcut's, is used instead; so is a model OpenWhispr has already downloaded |
+| **Voice** | `python -m project.voiceover --install` fetches [Piper](https://github.com/OHF-Voice/piper1-gpl)'s `en_US-ljspeech-high` voice (114 MB, checksum-verified) into `models/piper/`. Its training recordings are public domain; many other Piper voices are non-commercial, so check a voice's model card before adding it there. Without it, narration uses a Windows voice |
 | **Node.js** | 22 or newer, for graphics: Frameflow runs [HyperFrames](https://github.com/heygen-com/hyperframes) 0.8.199 through `npx` to render titles, captions and cards |
 | **Shotcut** (optional) | 26.x, only for `--editor shotcut`. Its `melt` engine checks and renders Shotcut projects |
 
@@ -44,6 +45,10 @@ pip install -r requirements.txt
 
 ```bash
 python -m project.transcribe --install
+```
+
+```bash
+python -m project.voiceover --install
 ```
 
 `FRAMEFLOW_WHISPER_CLI` and `FRAMEFLOW_WHISPER_MODEL` override where the transcriber and model are looked for.
@@ -83,6 +88,17 @@ python -m project.shorts "path/to/recording.mp4" --build
 ```
 
 Each short is built in its own folder, `short-1/`, `short-2/`, ..., as a vertical first cut with captions.
+
+### Your brand
+
+Titles, cards and captions use your brand kit, `brand/brand.json` in this folder (it is yours, so git ignores it). Every field is optional; paths are relative to the file:
+
+```json
+{"font": "Brand-Bold.ttf", "text": "#1B1B1B", "accent": "#E4572E", "background": "#F4E9DA",
+ "logo": "logo.svg", "uppercase_captions": false}
+```
+
+`font` is a font file or the name of an installed font; `accent` colours the word being said; `background` colours title screens and the plate behind cards; the logo sits above the text of title screens. Change it and the next build is restyled. Projects already built keep their look.
 
 ### With an API key
 

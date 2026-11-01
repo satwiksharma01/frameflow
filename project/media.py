@@ -35,6 +35,11 @@ VFR_TOLERANCE = 0.02
 # duplicate ~40% of their frames.
 RATE_JITTER_TOLERANCE = 0.02
 
+# Where YouTube, Instagram and TikTok play speech: about -14 LUFS, with true
+# peaks kept under -1 dBTP so encoding for upload does not clip them.
+TARGET_LUFS = -14.0
+PEAK_CEILING_DBTP = -1.0
+
 
 class MediaError(Exception):
     pass
@@ -66,6 +71,30 @@ def _find_tool(name: str) -> str:
         if candidate.exists():
             return str(candidate)
     raise MediaError(f"{name} not found on PATH or in the local ffmpeg install")
+
+
+def loudness(path: Path | str) -> tuple[float, float]:
+    """A file's integrated loudness (LUFS) and true peak (dBTP) as it plays in a stereo project.
+
+    OpenShot plays a mono file into both channels 3 dB down - as loud, with
+    peaks 3 dB lower (measured on a rendered tone) - as ffmpeg's conversion to stereo does.
+    """
+    result = subprocess.run(
+        [_find_tool("ffmpeg"), "-hide_banner", "-nostats", "-i", str(path), "-vn",
+         "-af", "aformat=channel_layouts=stereo,loudnorm=print_format=json", "-f", "null", "-"],
+        capture_output=True, text=True, errors="replace", timeout=3600,
+    )
+    start, end = result.stderr.rfind("{"), result.stderr.rfind("}")
+    if result.returncode != 0 or start < 0:
+        raise MediaError(f"could not measure the loudness of {Path(path).name}: {result.stderr.strip()[-500:]}")
+    measured = json.loads(result.stderr[start:end + 1])
+    return float(measured["input_i"]), float(measured["input_tp"])
+
+
+def level_db(lufs: float, peak_dbtp: float) -> float:
+    """The gain that brings speech to the platforms' level, stopping where its peaks would clip."""
+    gain = min(TARGET_LUFS - lufs, PEAK_CEILING_DBTP - peak_dbtp)
+    return round(gain, 1) if gain != float("inf") else 0.0
 
 
 def probe(video_path: Path | str) -> dict:

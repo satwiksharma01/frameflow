@@ -1,6 +1,8 @@
 """Captions that pop in word by word: lines, placing them through a cut, and the track."""
+import json
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest import mock
 
@@ -86,7 +88,7 @@ class TestThroughTheCut(unittest.TestCase):
             return out
 
         ir = {**self.IR, "tracks": [dict(self.IR["tracks"][0])]}
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(hyperframes, "render", fake_render):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(hyperframes, "render", fake_render),                 mock.patch.object(hyperframes, "BRAND_FILE", Path(tmp) / "no-kit.json"):
             self.assertEqual(captions.add(ir, self.runs(), Path(tmp)), 2)
             self.assertEqual(captions.add(ir, [], Path(tmp)), 0)
         validate(ir, "ir")
@@ -98,6 +100,16 @@ class TestThroughTheCut(unittest.TestCase):
         self.assertEqual(second["source_in"], first["source_out"])     # back to back in the render
         self.assertEqual((first["timeline_start"], second["timeline_start"]), (0.5, 2.2))
         self.assertAlmostEqual(second["source_out"] - second["source_in"], second["timeline_duration"])
+
+    def test_captions_take_the_brand_kit(self):
+        line = {"start": 0, "end": 30, "words": [(0, "Hello")]}
+        kit = dict(hyperframes.BRAND, font="Georgia", text="#222222", accent="#FF3366", uppercase_captions=False)
+        html, _ = captions.page([line], 1080, 1920, 30, kit)
+        self.assertIn('"Hello"', html)
+        self.assertIn('HIGHLIGHT = "#FF3366", TEXT = "#222222"', html)
+        self.assertIn('font-family:"Georgia",', html)
+        self.assertIn("px #FFFFFF;", html)          # dark text gets a light outline, to read over dark footage
+        self.assertIn("px #000000;", captions.page([line], 1080, 1920, 30)[0])
 
     def test_text_cannot_end_the_script(self):
         line = {"start": 0, "end": 30, "words": [(0, "</script><b>")]}
@@ -168,6 +180,56 @@ class TestVoiceWordTimings(unittest.TestCase):
         self.assertEqual([w["text"] for w in found], ["Meet", "it.", "Now", "$129 today!"])
         self.assertEqual([w["start"] for w in found], [0.1, 0.429, 2.194, 2.384])
         self.assertEqual([w["end"] for w in found], [0.429, 2.194, 2.384, 5.0])
+
+
+class TestPiperWordTimings(unittest.TestCase):
+    # Piper says how many samples each phoneme lasts; "^" and "$" open and close a sentence.
+    def test_each_word_spans_its_phonemes_and_not_the_pause_after(self):
+        aligned = [("^", 100), ("m", 100), ("i", 100), ("t", 100), (" ", 200), ("ɪ", 100), ("t", 100), (".", 100),
+                   ("$", 100), ("^", 100), ("n", 100), ("a", 100), (" ", 100), ("g", 100), ("o", 100), ("!", 100),
+                   ("$", 100)]
+        found = voiceover.piper_words("Meet it. Now go!", [1, 1, 1, 1], aligned, 1000)
+        self.assertEqual([(w["start"], w["end"], w["text"]) for w in found],
+                         [(0.1, 0.4, "Meet"), (0.6, 0.9, "it."), (1.1, 1.3, "Now"), (1.4, 1.7, "go!")])
+
+    def test_a_number_said_as_several_words_is_one_word_on_screen(self):
+        aligned = [("^", 100), ("d", 100), (" ", 100), ("w", 100), (" ", 100), ("n", 100), (" ", 100), ("t", 100),
+                   ("$", 100)]
+        found = voiceover.piper_words("$129 today", [3, 1], aligned, 1000)
+        self.assertEqual([(w["start"], w["end"], w["text"]) for w in found], [(0.1, 0.6, "$129"), (0.7, 0.8, "today")])
+
+    def test_words_the_voice_runs_together_still_come_in_order(self):
+        # Piper says "everyone... so," without a break between them: four words, three runs of phonemes.
+        aligned = [("^", 100), ("h", 100), (" ", 100), ("e", 100), ("s", 100), (",", 100), (" ", 100), ("t", 100),
+                   ("$", 100)]
+        found = voiceover.piper_words("Hey everyone... so, today", [1, 1, 1, 1], aligned, 1000)
+        self.assertEqual([w["text"] for w in found], ["Hey", "everyone...", "so,", "today"])
+        times = [t for w in found for t in (w["start"], w["end"])]
+        self.assertEqual(times, sorted(times))
+        self.assertEqual((times[0], times[-1]), (0.1, 0.8))
+
+    def test_a_mark_with_nothing_to_say_is_left_out(self):
+        aligned = [("^", 100), ("m", 100), (" ", 100), ("ɪ", 100), ("$", 100)]
+        found = voiceover.piper_words("Meet — it", [1, 0, 1], aligned, 1000)
+        self.assertEqual([w["text"] for w in found], ["Meet", "it"])
+
+    def test_piper_voices_are_offered_first(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(voiceover, "PIPER_DIR", Path(tmp)), \
+                mock.patch.object(voiceover, "_powershell", lambda script: mock.Mock(stdout="Microsoft Zira Desktop\n")):
+            (Path(tmp) / "en_US-ljspeech-high.onnx").write_bytes(b"")
+            self.assertEqual(voiceover.voices(), ["en_US-ljspeech-high", "Microsoft Zira Desktop"])
+
+    @unittest.skipUnless((voiceover.PIPER_DIR / f"{voiceover.DEFAULT_PIPER_VOICE}.onnx").exists(),
+                         "the Piper voice is not installed")
+    def test_piper_reads_a_line_with_a_time_for_every_word(self):
+        text = "Meet the Nova jacket. Now $129, only today!"
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = voiceover.speak(text, Path(tmp) / "line.wav", voiceover.DEFAULT_PIPER_VOICE)
+            said = json.loads(wav.with_suffix(".json").read_text(encoding="utf-8"))
+            with wave.open(str(wav)) as w:
+                duration = w.getnframes() / w.getframerate()
+        self.assertEqual([w["text"] for w in said], text.split())
+        self.assertLessEqual(said[-1]["end"], duration)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,8 @@ What OpenMontage does, what Frameflow does differently, and what to build next
 for the videos Frameflow is for: YouTube videos, pitches for ideas, and reels
 (fashion, lifestyle, products woven in).
 
-Written 2026-10-31, from OpenMontage's `main` branch on that day.
+Written 2026-10-31, from OpenMontage's `main` branch on that day. "Where
+Frameflow stands" updated 2026-11-01.
 
 ## How this was worked out
 
@@ -64,15 +65,17 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Their changes by hand | Not a concept | Detected and kept; an edit that would undo one is refused unless asked |
 | Asking for changes | The agent re-renders | Applied to the project as it is now, live in the open OpenShot window, one Ctrl+Z to undo |
 | Cuts in speech | Silence cutting | Cut points moved into measured pauses, then every join played back through OpenShot's engine and transcribed to check no word was clipped |
+| Sound | Audio clean-up; checked for silence and clipping after rendering | Speech set toward -14 LUFS as a clip volume; no clean-up, and no limiter yet |
 | Captions | Burned in | Word by word, each line a clip, following the cut through later edits |
-| Video from a prompt | 12 pipelines, research, generated images and video | Brief, storyboard, build: the creator's footage, images and music, HyperFrames titles, the Windows voice |
+| Video from a prompt | 12 pipelines, research, generated images and video | Brief, storyboard, build: the creator's footage, images and music, HyperFrames titles, Piper's voice |
 | Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track |
-| Reframing to vertical | Yes | No |
-| Long video to shorts | Yes | No |
+| Reframing to vertical | Face tracking, the crop baked into a new file | Face following as a crop and position on the clip, which the creator can nudge in OpenShot and later edits keep |
+| Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; no metadata yet |
 | Reference video | Yes | Planned: the creator's rebuild of Hypit |
 | B-roll and stock | 16 stock sources, CLIP search | The creator's own assets only |
-| Voice, music | Piper and ~10 paid voices; music generation and search | Windows' voice; the creator's music |
+| Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music |
 | Generated pictures and video | Many providers | None |
+| Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; aspect and loudness per platform |
 | Checks on the picture | After every render | Done by hand while building features, not part of the pipeline |
 | Cost control | Yes | Nothing paid yet, so not needed yet |
 
@@ -122,15 +125,31 @@ The format the creator posts most, and the shortest path from what exists.
 - **A voice that can be posted.** Piper (offline, free) beside the Windows
   voice; it also needs word timings for captions. *Done when:* a prompt-made
   reel narrated by Piper has captions in sync, checked by transcribing it.
+  *Status:* built and checked (2026-10-31): Piper's public-domain
+  `en_US-ljspeech-high` voice is the default, with word timings from its own
+  phoneme durations. The jacket reel rebuilt with it, rendered through
+  OpenShot's engine and transcribed: every caption line comes up within
+  0.09 s of its first word (see findings).
 - **Loudness and level for the platform.** Measure integrated loudness (LUFS)
   and set the voice level for the platform's target as a volume on the clips,
   so it stays adjustable.
+  *Status:* built and checked (2026-10-31): speech is set toward -14 LUFS, as a
+  clip volume, stopping where its peaks would pass -1 dBTP. Rendered through
+  OpenShot's engine: the three shorts went from -31.6 to -18.0 to -18.8 LUFS,
+  the Piper reel to -16.3. Reaching -14 on peaky speech needs a limiter, which
+  volume alone cannot do (see findings).
 
 ### 2. Product pitches and fashion reels
 
 - **A brand kit.** Fonts, colours, logo and caption style per creator, used by
   every title, card and caption: OpenMontage's style playbooks, kept small.
   *Done when:* changing the kit restyles the next build without touching code.
+  *Status:* built and checked (2026-11-01): `brand/brand.json` sets the font
+  (a file or an installed font), text, accent and background colours, a logo
+  and caption capitals. The jacket reel rebuilt with a sample kit, frames
+  rendered through OpenShot's engine: title screens in the brand colour under
+  the logo, captions in the brand font and accent; without a kit nothing
+  changes (see findings).
 - **Product cards, price tags and lower thirds** as HyperFrames templates of
   Frameflow's own (no GSAP), anchored to the moment a product is named.
 - **B-roll on its own track.** First from the creator's own asset folder,

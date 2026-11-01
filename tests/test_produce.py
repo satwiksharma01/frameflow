@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from project import produce
-from project.media import _find_tool
+from project.media import _find_tool, level_db, loudness
 from project.validate import ValidationError, validate
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +101,8 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(tracks["Captions"]["clips"][0]["timeline_start"], 2.0)
         voice = tracks["Voice"]["clips"][0]
         self.assertAlmostEqual(voice["timeline_start"], 2.0 + produce.VOICE_LEAD_SECONDS)
+        # The 330 Hz tone reads -21.9 LUFS: raised 7.9 dB to the platforms' -14, its peaks still under -1 dBTP.
+        self.assertAlmostEqual(voice["volume_db"], 7.9, delta=0.3)
         song = tracks["Music"]["clips"][0]
         self.assertAlmostEqual(song["timeline_duration"], 3.5, places=1)   # cut to the video's length
         self.assertEqual(song["volume_db"], -18.0)                          # under a voice
@@ -164,7 +166,7 @@ class TestBuildingTheProject(unittest.TestCase):
         ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
         clip = ir["tracks"][0]["clips"][0]
         self.assertEqual((clip["source_in"], clip["source_out"]), (1.0, 4.0))
-        self.assertNotIn("volume_db", clip)
+        self.assertEqual(clip["volume_db"], level_db(*loudness(FOOTAGE)))   # levelled for the platform, not muted
         self.assertNotIn("transform", clip)                              # 16:9 footage fits as it is
         self.assertEqual(ir["project"]["fps"], 30)                       # the footage's own rate
 
@@ -180,6 +182,21 @@ class TestRequests(unittest.TestCase):
             with self.assertRaises(produce.ProduceError) as cm:
                 produce.storyboard_request(folder)
         self.assertIn("Price?", str(cm.exception))
+
+    def test_the_storyboard_request_passes_on_the_brand_kit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / produce.INPUTS_FILE).write_text('{"prompt": "p", "script": null, "footage": [], '
+                                                      '"assets": [], "music": []}', encoding="utf-8")
+            (folder / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+            (folder / "brand.json").write_text('{"accent": "#FF3366"}', encoding="utf-8")
+            with mock.patch.object(produce.hyperframes, "BRAND_FILE", folder / "brand.json"):
+                request = produce.storyboard_request(folder).read_text(encoding="utf-8")
+            (folder / "brand.json").unlink()
+            with mock.patch.object(produce.hyperframes, "BRAND_FILE", folder / "brand.json"):
+                plain = produce.storyboard_request(folder).read_text(encoding="utf-8")
+        self.assertIn("#FF3366", request)
+        self.assertNotIn("the creator's brand kit", plain)
 
 
 if __name__ == "__main__":

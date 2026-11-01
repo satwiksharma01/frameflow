@@ -20,5 +20,8 @@ output/
 # Local credentials - each user brings their own provider key
 .env
 
+# The creator's brand kit (brand/brand.json, fonts, logo) - theirs, not Frameflow's
+brand/
+
 # Transcription engine fetched by python -m project.transcribe --install
 tools/
