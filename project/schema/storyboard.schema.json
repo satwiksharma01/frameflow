@@ -66,8 +66,36 @@
           "exclusiveMinimum": 0,
           "description": "Seconds. Needed for an image, title or composition without narration; otherwise optional. A footage scene lasts as long as its span."
         },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/card" },
+          "description": "Optional: product cards and lower thirds over this scene's footage or asset, in the brand kit's style, at the left just above the spoken captions. Not over a title or composition, and one on screen at a time."
+        },
         "reason": { "type": "string", "minLength": 1, "description": "Why this scene is here, for the creator." }
       }
+    },
+    "card": {
+      "type": "object",
+      "required": ["kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["product", "lower_third"],
+          "description": "product: a product's name, a line under it and its price as a tag. lower_third: a person's name, with their role or handle under it."
+        },
+        "text": { "type": "string", "minLength": 1, "description": "The product's name, or the person's." },
+        "subtitle": { "type": "string", "minLength": 1, "description": "Optional second line: what the product is or where to get it; the person's role or handle." },
+        "price": { "type": "string", "minLength": 1, "description": "Optional, product cards only: the price as it should read, such as \"$129\" or \"₹4,990\"." },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional: words said in this scene, in its narration or in the recording's transcript, written as they are said there (\"the Nomad\"). The card comes up as the first of them is said: when the product is named, or the person introduced. At the scene's start when absent."
+        },
+        "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Optional: seconds on screen, 3 when absent. It never runs past the end of the scene." }
+      },
+      "if": { "properties": { "kind": { "const": "lower_third" } } },
+      "then": { "not": { "required": ["price"] } }
     },
     "footage": {
       "type": "object",

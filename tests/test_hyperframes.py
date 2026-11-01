@@ -127,6 +127,44 @@ class TestBrandKit(unittest.TestCase):
                 self.assertIn(expected, str(cm.exception))
 
 
+class TestProductCardsAndLowerThirds(unittest.TestCase):
+    def test_a_product_card_shows_its_name_a_line_and_the_price_as_a_tag(self):
+        page = hyperframes.card_html("Nomad jacket", 1080, 1920, 30, 3, "product",
+                                     subtitle="Packs into its own pocket", price="₹4,990")
+        self.assertIn('Nomad jacket<div class="sub">Packs into its own pocket</div><div class="price">₹4,990</div>',
+                      page)
+        self.assertIn(".price{display:inline-block;", page)
+        self.assertIn("background:#FFE14D;color:#000000}", page)      # the accent, with text that reads on it
+        # At the left, its bottom edge above where the spoken captions' line sits (68% down a reel).
+        self.assertIn("left:65px;bottom:749px;", page)
+        self.assertIn("text-align:left", page)
+
+    def test_a_lower_third_has_an_accent_bar_and_never_a_price(self):
+        page = hyperframes.card_html("Satwik Sharma", 1920, 1080, 30, 3, "lower_third",
+                                     subtitle="Founder, Frameflow", price="₹4,990")
+        self.assertIn('Satwik Sharma<div class="sub">Founder, Frameflow</div></div>', page)
+        self.assertIn("border-left:", page)
+        self.assertIn("solid #FFE14D", page)
+        self.assertNotIn('class="price"', page)
+        self.assertIn("left:115px;bottom:281px;", page)             # above the captions at 84% down
+
+    def test_the_kits_accent_marks_the_price_and_the_bar(self):
+        kit = dict(hyperframes.BRAND, accent="#1A1A2E", background="#F4E9DA")
+        page = hyperframes.card_html("Nomad", 1080, 1920, 30, 3, "product", kit, price="$129")
+        self.assertIn("background:#1A1A2E;color:#FFFFFF}", page)     # a dark accent gets light text
+        self.assertIn("background:#F4E9DAC7", page)
+
+    def test_a_cards_lines_reach_the_render(self):
+        clip = {"id": "clip1", "timeline_start": 0, "timeline_duration": 3.0, "generator": "hyperframes",
+                "text": "Nomad jacket", "generator_params": {"layout": "product", "price": "$129"}}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(hyperframes, "BRAND_FILE", Path("no/such/brand.json")), \
+                mock.patch.object(hyperframes, "render", lambda c, out, fps: out):
+            hyperframes.render_clip(clip, _project(1080, 1920), Path(tmp))
+            page = next(Path(tmp).rglob("index.html")).read_text(encoding="utf-8")
+        self.assertIn('<div class="price">$129</div>', page)
+
+
 class TestRealRender(unittest.TestCase):
     def test_a_card_renders_with_a_transparent_background(self):
         if shutil.which("npx") is None:

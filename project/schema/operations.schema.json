@@ -58,6 +58,12 @@
             "minLength": 1,
             "description": "The words on a text card. Required unless composition is given."
           },
+          "kind": {
+            "enum": ["product", "lower_third"],
+            "description": "Optional: draw the text card as a product card (text is the product's name, with a subtitle and a price) or a lower third (text is a person's name, with their role or handle as the subtitle), in the brand kit's style at the left, just above the captions. A plain text card when absent."
+          },
+          "subtitle": { "type": "string", "minLength": 1, "description": "Optional, with kind: the line under the text." },
+          "price": { "type": "string", "minLength": 1, "description": "Optional, product cards only: the price as it should read, shown as a tag." },
           "composition": {
             "type": "string",
             "minLength": 1,
@@ -71,7 +77,10 @@
           "at": { "type": "number", "minimum": 0, "description": "Seconds into the recording where the graphic appears; it must be in the cut." },
           "duration": { "type": "number", "exclusiveMinimum": 0, "description": "Seconds on screen." },
           "reason": { "type": "string", "minLength": 1 }
-        }
+        },
+        "dependentRequired": { "subtitle": ["kind"], "price": ["kind"] },
+        "if": { "properties": { "kind": { "const": "lower_third" } }, "required": ["kind"] },
+        "then": { "not": { "required": ["price"] } }
       }
     }
   }

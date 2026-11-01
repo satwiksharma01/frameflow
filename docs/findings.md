@@ -213,6 +213,35 @@ Not yet: a kit per video (one kit applies to everything; swap the file for
 another brand), and restyling a built project when the kit changes (a later
 edit renders new caption lines in the new style beside the old ones).
 
+## Product cards and lower thirds
+
+Two card layouts of Frameflow's own, animated without GSAP like the plain
+card: a product card (the product's name, a line under it, its price as a tag
+in the kit's accent) and a lower third (a name, a role under it, an accent bar
+at the left). Both take the brand kit and sit at the left, just above the line
+where spoken captions go, so the two never cover each other.
+
+- **Anchored to words, not seconds.** A storyboard is written before the voice
+  is made, so the agent cannot know when a word will be said; it can name the
+  words. A scene's card gives `when` ("the Nomad"), and the narration's word
+  timings, or the recording's transcript over footage, say when the first of
+  them is said. Words the scene does not say, or a card on top of another
+  graphic, stop the build with the scene named.
+- **In an edit,** a graphic takes `kind`, `subtitle` and `price` beside its
+  text and lands at its moment of the recording, as graphics already did.
+- **A fixed spot can cover a face.** On the jacket reel's photo, where the face
+  sits mid-frame, the product card covers the eyes; on the talking-head short
+  the lower third sits across the chin. The creator can move it (Location Y in
+  OpenShot). Keeping cards off the face belongs with checking the picture.
+- Checked through OpenShot's engine: the jacket reel with a product card on
+  "the Nomad", in the sample kit, starts it on frame 80, where Piper says
+  "the" (2.66 s), half faded in by frame 84; a lower third added by an edit to
+  the first short, without a kit, comes up as the speaker starts and stays
+  above the captions.
+
+Not yet: a product photo in the card, and a price tag on its own pinned to the
+item in the picture.
+
 ## Captions, word by word
 
 `--captions` on a first cut, or `"spoken_captions": true` in a storyboard,

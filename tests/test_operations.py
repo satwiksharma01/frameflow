@@ -290,6 +290,16 @@ class TestGraphics(unittest.TestCase):
         add_graphics(result, doc["graphics"])
         self.assertAlmostEqual(result["tracks"][-1]["clips"][0]["timeline_start"], 1.5, places=1)
 
+    def test_a_product_card_or_lower_third_keeps_its_lines(self):
+        project = copy.deepcopy(self.BASE)
+        card = self.graphic(7.0, kind="product", subtitle="Packs into its own pocket", price="$129")
+        validate({"summary": "s", "operations": [], "graphics": [card]}, "operations")
+        self.assertEqual(add_graphics(project, [card]), [])
+        clip = project["tracks"][-1]["clips"][0]
+        self.assertEqual((clip["text"], clip["generator_params"]), (
+            "Hello", {"layout": "product", "subtitle": "Packs into its own pocket", "price": "$129"}))
+        validate(project, "ir")
+
     def test_a_graphic_needs_text_or_a_composition(self):
         bare = {"at": 1.0, "duration": 1.0, "reason": "test"}
         self.assertIn("text, or a composition", add_graphics(copy.deepcopy(self.BASE), [bare])[0])

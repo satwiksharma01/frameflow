@@ -33,6 +33,7 @@ from project.media import MediaError, analyze, level_db, loudness, probe, still_
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
 from project.validate import ValidationError, load_schema, validate
+from project.verify_cuts import tokenize
 
 INPUTS_FILE = "inputs.json"
 BRIEF_FILE = "brief.json"
@@ -48,6 +49,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 UNDER_NARRATION_DB = -60.0
 VOICE_LEAD_SECONDS = 0.15
 VOICE_TAIL_SECONDS = 0.35
+CARD_SECONDS = 3.0      # how long a product card or lower third stays up, unless the storyboard says
 
 
 class ProduceError(Exception):
@@ -200,6 +202,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
 {brand_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
+- When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
 
   ```
@@ -266,6 +269,16 @@ def _seconds(path: Path) -> float:
 def _level(path: Path | str) -> float:
     """The volume that brings this recording or voice line to the platforms' level."""
     return level_db(*loudness(path))
+
+
+def _said_at(words: list[dict], phrase: str) -> float | None:
+    """When the first word of `phrase` is said, where all its words are said in a row."""
+    want = tokenize(phrase)
+    said = [(w["start"], t) for w in words for t in tokenize(w["text"])]
+    for i in range(len(said) - len(want) + 1):
+        if want and [t for _, t in said[i:i + len(want)]] == want:
+            return said[i][0]
+    return None
 
 
 def _crop_keys(folder: Path, footage: dict, width: int, height: int) -> list[dict]:
@@ -343,15 +356,38 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                     if x:
                         clip["transform"]["position"] = {"x": x}
             main.append(clip)
+        heard = None        # what is said in the scene, on the timeline: the narration, else the footage's speech
+        if board.get("spoken_captions") or "cards" in scene:
+            if spoken:
+                words = json.loads(spoken[0].with_suffix(".json").read_text(encoding="utf-8"))
+                heard = captions.run(words, 0.0, length - VOICE_LEAD_SECONDS, cursor + VOICE_LEAD_SECONDS)
+            elif visual["type"] == "footage":
+                timing = json.loads((folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))
+                heard = captions.run(timing["words"], start, end, cursor)
         if "caption" in scene:
             fixed_captions.append({"timeline_start": cursor, "timeline_duration": length,
                                    "generator": "hyperframes", "text": scene["caption"]})
-        elif board.get("spoken_captions") and spoken:
-            words = json.loads(spoken[0].with_suffix(".json").read_text(encoding="utf-8"))
-            said.append(captions.run(words, 0.0, length - VOICE_LEAD_SECONDS, cursor + VOICE_LEAD_SECONDS))
-        elif board.get("spoken_captions") and visual["type"] == "footage":
-            timing = json.loads((folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))
-            said.append(captions.run(timing["words"], start, end, cursor))
+        elif board.get("spoken_captions") and heard:
+            said.append(heard)
+        for card in scene.get("cards", []):
+            at = cursor
+            if "when" in card:
+                at = _said_at(heard["words"] if heard else [], card["when"])
+                if at is None:
+                    problems.append(f"{card['when']!r} is not said in scene {n}, so the {card['text']!r} card "
+                                    f"has no moment to come up; use words from its narration or transcript")
+                    continue
+            at = round(frame_align(at, fps), 6)
+            until = round(frame_align(min(at + card.get("duration", CARD_SECONDS), cursor + length), fps), 6)
+            if any(g["timeline_start"] < until and at < g["timeline_start"] + g["timeline_duration"]
+                   for g in graphics):
+                problems.append(f"scene {n}: the {card['text']!r} card would be on screen with another graphic; "
+                                f"put cards over footage or an asset, one at a time")
+                continue
+            graphics.append({"timeline_start": at, "timeline_duration": round(until - at, 6),
+                             "generator": "hyperframes", "text": card["text"],
+                             "generator_params": {"layout": card["kind"],
+                                                  **{k: card[k] for k in ("subtitle", "price") if k in card}}})
         if spoken:
             voice.append({"source": spoken[0].resolve().as_posix(), "source_in": 0.0,
                           "source_out": spoken[1], "timeline_start": round(cursor + VOICE_LEAD_SECONDS, 6),

@@ -134,12 +134,6 @@ def lines(runs: list[dict], fps: float, max_chars: int) -> list[dict]:
     return found
 
 
-def _outline(colour: str) -> str:
-    """Black around light text, white around dark, so captions read over any footage."""
-    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
-    return "#000000" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 else "#FFFFFF"
-
-
 def page(found: list[dict], width: int, height: int, fps: float,
          kit: dict = hyperframes.BRAND) -> tuple[str, list[int]]:
     """One composition showing every line back to back, in the brand kit's style, and the
@@ -157,7 +151,7 @@ def page(found: list[dict], width: int, height: int, fps: float,
     html = _PAGE.format(
         w=width, h=height, fps=hyperframes._rate(fps), d=round(offset / fps, 6), eps=0.5 / fps,
         lines=json.dumps(rows, ensure_ascii=False).replace("</", "<\\/"), highlight=kit["accent"],
-        text=kit["text"], font_face=font_face, family=family, outline=_outline(kit["text"]),
+        text=kit["text"], font_face=font_face, family=family, outline=hyperframes.contrast(kit["text"]),
         # Portrait: above the app's buttons and text at the bottom of a reel.
         y=round(height * (0.68 if portrait else 0.84)), max_w=round(width * 0.86),
         size=round((84 if portrait else 72) * unit), stroke=round(10 * unit), shadow=round(6 * unit),

@@ -68,7 +68,7 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Sound | Audio clean-up; checked for silence and clipping after rendering | Speech set toward -14 LUFS as a clip volume; no clean-up, and no limiter yet |
 | Captions | Burned in | Word by word, each line a clip, following the cut through later edits |
 | Video from a prompt | 12 pipelines, research, generated images and video | Brief, storyboard, build: the creator's footage, images and music, HyperFrames titles, Piper's voice |
-| Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track |
+| Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track; product cards and lower thirds that come up when their words are said |
 | Reframing to vertical | Face tracking, the crop baked into a new file | Face following as a crop and position on the clip, which the creator can nudge in OpenShot and later edits keep |
 | Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; no metadata yet |
 | Reference video | Yes | Planned: the creator's rebuild of Hypit |
@@ -152,6 +152,13 @@ The format the creator posts most, and the shortest path from what exists.
   changes (see findings).
 - **Product cards, price tags and lower thirds** as HyperFrames templates of
   Frameflow's own (no GSAP), anchored to the moment a product is named.
+  *Status:* built and checked (2026-11-01): a product card (name, a line, the
+  price as a tag) and a lower third (name, role), in the brand kit, at the
+  left above the captions. A storyboard scene's card comes up as its words
+  are said; an edit places one at a moment of the recording. Checked through
+  OpenShot's engine: on the jacket reel the card came up on the frame where
+  the voice says "the Nomad". The price tag lives inside the product card; a
+  tag pinned to an item in the picture is not built (see findings).
 - **B-roll on its own track.** First from the creator's own asset folder,
   matched to what is being said; stock (Pexels, Pixabay, with the creator's
   free keys) only if they want it. Clips sit on a B-roll track, anchored to the

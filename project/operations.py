@@ -335,6 +335,8 @@ def add_graphics(ir: dict, graphics: list[dict]) -> list[str]:
                 "timeline_duration": g["duration"], "generator": "hyperframes"}
         if "text" in g:
             clip["text"] = g["text"]
+        if "kind" in g:
+            clip["generator_params"] = {"layout": g["kind"], **{k: g[k] for k in ("subtitle", "price") if k in g}}
         if "composition" in g:
             clip["generator_params"] = {"composition": g["composition"]}
         track["clips"].append(clip)

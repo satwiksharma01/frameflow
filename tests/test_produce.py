@@ -60,6 +60,15 @@ class TestStoryboardChecks(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate(self.board({"visual": {"type": "stock", "query": "rain"}, "reason": "r"}), "storyboard")
 
+    def test_only_a_product_card_has_a_price(self):
+        def scene(card):
+            return self.board({"visual": {"type": "asset", "path": "shot.png"}, "duration": 2, "reason": "r",
+                               "cards": [card]})
+        validate(scene({"kind": "product", "text": "Nomad", "price": "$129", "when": "Nomad"}), "storyboard")
+        validate(scene({"kind": "lower_third", "text": "Satwik", "subtitle": "Founder"}), "storyboard")
+        with self.assertRaises(ValidationError):
+            validate(scene({"kind": "lower_third", "text": "Satwik", "price": "$129"}), "storyboard")
+
 
 class TestBuildingTheProject(unittest.TestCase):
     def setUp(self):
@@ -127,6 +136,73 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(spoken["text"], "Meet Nomad")                  # the second scene shows its own caption
         self.assertAlmostEqual(spoken["timeline_start"], produce.VOICE_LEAD_SECONDS + 0.1, places=1)
         self.assertEqual((fixed["text"], "source" in fixed), ("Sale", False))
+
+    def _said(self, text, out, voice=None):
+        """A narration line whose words come 0.25 s apart, from 0.1 s."""
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.with_suffix(".json").write_text(json.dumps(
+            [{"start": 0.1 + 0.25 * i, "end": 0.35 + 0.25 * i, "text": w} for i, w in enumerate(text.split())]))
+        return _tone(out, 1.0)
+
+    def _image(self):
+        image = self.folder / "shot.png"
+        subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=800x600",
+                        "-frames:v", "1", str(image)], check=True)
+        return {"footage": [], "assets": [{"path": image.as_posix(), "kind": "image"}], "music": []}
+
+    def test_a_product_card_comes_up_when_the_product_is_named(self):
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r"},
+            {"visual": {"type": "asset", "path": "shot.png"}, "narration": "Meet the Nomad, only $129.",
+             "duration": 4.0, "reason": "r",
+             "cards": [{"kind": "product", "text": "Nomad jacket", "subtitle": "Packs into its own pocket",
+                        "price": "$129", "when": "the nomad"}]}]}
+        with mock.patch.object(produce.voiceover, "speak", self._said):
+            ir = produce.build_ir(self.folder, board, BRIEF, self._image())
+        validate(ir, "ir")
+        title, card = ir["tracks"][1]["clips"]
+        # "the" is the second word, said 0.35 s into the line, which starts after the 2 s title and the lead.
+        self.assertAlmostEqual(card["timeline_start"], 2.0 + produce.VOICE_LEAD_SECONDS + 0.35, delta=1 / 30)
+        self.assertEqual(card["timeline_duration"], produce.CARD_SECONDS)
+        self.assertEqual((card["text"], card["generator_params"]), (
+            "Nomad jacket", {"layout": "product", "subtitle": "Packs into its own pocket", "price": "$129"}))
+
+    def test_over_footage_a_card_comes_up_when_the_recording_says_it(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [
+            {"start": 0.2, "end": 0.5, "text": " Hello"}, {"start": 0.5, "end": 0.8, "text": " there"},
+            {"start": 2.0, "end": 2.3, "text": " Hello"}, {"start": 2.3, "end": 2.6, "text": " there."}]}))
+        inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
+                               "folder": "f"}], "assets": [], "music": []}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 4.0}, "reason": "r",
+             "cards": [{"kind": "lower_third", "text": "Satwik Sharma", "when": "Hello, there!"}]}]}
+        ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
+        self.assertEqual(ir["tracks"][1]["clips"][0]["timeline_start"], 1.0)   # said at 2.0 s, inside the span
+
+    def test_a_card_stops_at_the_end_of_its_scene(self):
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "shot.png"}, "duration": 2.0, "reason": "r",
+             "cards": [{"kind": "lower_third", "text": "Satwik Sharma", "duration": 5.0}]}]}
+        ir = produce.build_ir(self.folder, board, BRIEF, self._image())
+        card = ir["tracks"][1]["clips"][0]
+        self.assertEqual((card["timeline_start"], card["timeline_duration"]), (0.0, 2.0))   # from the scene's start
+        self.assertEqual(card["generator_params"], {"layout": "lower_third"})
+
+    def test_cards_without_their_moment_or_on_top_of_another_graphic_are_reported(self):
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "shot.png"}, "narration": "Meet the Nomad", "reason": "r",
+             "cards": [{"kind": "product", "text": "Nomad", "when": "passport"}]},
+            {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r",
+             "cards": [{"kind": "lower_third", "text": "Satwik Sharma"}]}]}
+        with mock.patch.object(produce.voiceover, "speak", self._said), \
+                self.assertRaises(produce.ProduceError) as cm:
+            produce.build_ir(self.folder, board, BRIEF, self._image())
+        self.assertIn("'passport' is not said in scene 1", str(cm.exception))
+        self.assertIn("scene 2: the 'Satwik Sharma' card would be on screen with another graphic",
+                      str(cm.exception))
 
     def test_narration_longer_than_its_footage_is_reported(self):
         if not FOOTAGE.exists():

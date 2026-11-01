@@ -51,10 +51,12 @@ _CARD = """<!doctype html>
 {font_face}*{{box-sizing:border-box;margin:0}}
 html,body{{width:{w}px;height:{h}px;overflow:hidden;background:transparent;font-family:{family}}}
 #root{{width:{w}px;height:{h}px;position:relative;background:{screen}}}
-#card{{position:absolute;left:50%;{anchor};width:max-content;max-width:{max_w}px;padding:{pad_y}px {pad_x}px;
+#card{{position:absolute;{place};width:max-content;max-width:{max_w}px;padding:{pad_y}px {pad_x}px;
   border-radius:{radius}px;background:{plate};color:{color};font-size:{size}px;font-weight:700;
-  line-height:1.2;text-align:center;opacity:0;transform:{base}}}
+  line-height:1.2;text-align:{align};{bar}opacity:0;transform:{base}}}
 #logo{{display:block;margin:0 auto {pad_y}px;max-width:100%;max-height:{logo_h}px}}
+.sub{{font-size:{sub}px;font-weight:400}}
+.price{{display:inline-block;margin-top:{gap}px;padding:{gap}px {pad_y}px;border-radius:{gap}px;background:{accent};color:{on_accent}}}
 </style></head>
 <body><div id="root" data-composition-id="main" data-start="0" data-duration="{d}" data-width="{w}" data-height="{h}" data-fps="{fps}">
 <div id="card" class="clip" data-start="0" data-duration="{d}" data-track-index="0">{logo}{text}</div></div>
@@ -116,25 +118,49 @@ def brand_files(kit: dict, composition: Path) -> None:
             shutil.copyfile(kit[key], composition / f"brand-{key}{kit[key].suffix.lower()}")
 
 
+def contrast(colour: str) -> str:
+    """Black on or around a light colour, white on or around a dark one, so text on it reads."""
+    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    return "#000000" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 else "#FFFFFF"
+
+
 def card_html(text: str, width: int, height: int, fps: float, duration: float,
-              layout: str = "lower", kit: dict = BRAND) -> str:
+              layout: str = "lower", kit: dict = BRAND, subtitle: str | None = None,
+              price: str | None = None) -> str:
     """A text card: "lower" sits low in the frame over footage, "title" is centred and larger,
-    on the kit's background and under its logo."""
+    on the kit's background and under its logo. A "lower_third" (a name, a role under it) and a
+    "product" card (its name, a line under it, its price as a tag) sit at the left."""
     unit = min(width, height) / 1080      # sized for 1080 on the short side; portrait fits too
     title = layout == "title"
+    side = layout in ("lower_third", "product")
+    portrait = height > width
     font_face, family = brand_css(kit, "Arial,Helvetica,sans-serif")
     logo = title and isinstance(kit["logo"], Path)
+    body = html.escape(text)
+    if subtitle:
+        body += f'<div class="sub">{html.escape(subtitle)}</div>'
+    if price and layout == "product":
+        body += f'<div class="price">{html.escape(price)}</div>'
+    if title:
+        place, base = "left:50%;top:50%", "translate(-50%,-50%)"
+    elif side:      # just above the spoken captions' line, which captions.page puts 68% down a reel, 84% otherwise
+        place = f"left:{round(width * 0.06)}px;bottom:{round(height * (0.39 if portrait else 0.26))}px"
+        base = "translateX(0)"
+    else:
+        place, base = f"left:50%;bottom:{round(height * 0.11)}px", "translateX(-50%)"
     return _CARD.format(
-        w=width, h=height, fps=_rate(fps), d=round(duration, 6), text=html.escape(text),
+        w=width, h=height, fps=_rate(fps), d=round(duration, 6), text=body,
         font_face=font_face, family=family, color=kit["text"],
         screen=title and kit["background"] or "transparent",
         plate=f"{kit['background']}C7" if kit["background"] else "rgba(16,24,39,.78)",     # C7: 78% opaque
         logo=f'<img id="logo" src="brand-logo{kit["logo"].suffix.lower()}" alt="">' if logo else "",
         logo_h=round(240 * unit),
-        anchor="top:50%" if title else f"bottom:{round(height * 0.11)}px",
-        base="translate(-50%,-50%)" if title else "translateX(-50%)",
-        max_w=round(width * 0.84), pad_y=round(26 * unit), pad_x=round(44 * unit),
-        radius=round(22 * unit), size=round((96 if title else 60) * unit), rise=round(90 * unit))
+        place=place, base=base, align="left" if side else "center",
+        bar=f"border-left:{round(10 * unit)}px solid {kit['accent']};" if layout == "lower_third" else "",
+        max_w=round(width * (0.45 if side and not portrait else 0.84)), pad_y=round(26 * unit),
+        pad_x=round(44 * unit), radius=round(22 * unit), size=round((96 if title else 60) * unit),
+        sub=round(38 * unit), gap=round(12 * unit), accent=kit["accent"], on_accent=contrast(kit["accent"]),
+        rise=round(90 * unit))
 
 
 def _npx() -> str:
@@ -170,7 +196,8 @@ def render_clip(clip: dict, project: dict, folder: Path) -> Path:
     """The rendered file for one generated clip, rendering it if not cached."""
     graphics = folder / GRAPHICS_DIR
     fps = project["fps"]
-    composition = (clip.get("generator_params") or {}).get("composition")
+    params = clip.get("generator_params") or {}
+    composition = params.get("composition")
     if composition:
         source = Path(composition)
         if not (source / "index.html").exists():
@@ -179,9 +206,8 @@ def render_clip(clip: dict, project: dict, folder: Path) -> Path:
         if not clip.get("text"):
             raise HyperFramesError(f"clip {clip['id']!r} has neither text nor a composition")
         kit = brand()
-        page = card_html(clip["text"], project["width"], project["height"], fps,
-                         clip["timeline_duration"],
-                         (clip.get("generator_params") or {}).get("layout", "lower"), kit)
+        page = card_html(clip["text"], project["width"], project["height"], fps, clip["timeline_duration"],
+                         params.get("layout", "lower"), kit, params.get("subtitle"), params.get("price"))
         source = graphics / "cards" / hashlib.sha256(page.encode()).hexdigest()[:16]
         source.mkdir(parents=True, exist_ok=True)
         (source / "index.html").write_text(page, encoding="utf-8")
