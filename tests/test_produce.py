@@ -72,6 +72,23 @@ class TestStoryboardChecks(unittest.TestCase):
         self.assertIn("'other.mp4' is not one of the creator's assets", problems[0])
         self.assertIn("scene 2 (title): B-roll goes over footage", problems[1])
 
+    def test_a_look_is_one_of_the_creator_s_luts_or_openshot_s(self):
+        scene = {"visual": {"type": "footage", "source": "talk.mp4", "start": 1, "end": 4}, "reason": "r"}
+        with tempfile.TemporaryDirectory() as tmp:
+            install = Path(tmp)
+            (install / "colors" / "film").mkdir(parents=True)
+            (install / "colors" / "film" / "warm_film.cube").write_text("LUT_3D_SIZE 2\n")
+            (install / "mine.cube").write_text("LUT_3D_SIZE 2\n")
+            inputs = dict(self.INPUTS, looks=[{"path": (install / "mine.cube").as_posix()},
+                                              {"path": (install / "gone.cube").as_posix()}])
+            with mock.patch.object(produce.openshot_build, "install_dir", lambda: install):
+                found = {name: produce.check_storyboard(self.board(scene, look={"path": name}), inputs)
+                         for name in ("mine.cube", "warm_film.cube", "teal.cube", "gone.cube")}
+        validate(self.board(scene, look={"path": "mine.cube", "intensity": 0.7}), "storyboard")
+        self.assertEqual((found["mine.cube"], found["warm_film.cube"]), ([], []))
+        self.assertEqual(found["teal.cube"], ["look 'teal.cube' is not one of the creator's LUTs or OpenShot's own"])
+        self.assertIn("is not there any more", found["gone.cube"][0])
+
     def test_only_a_product_card_has_a_price(self):
         def scene(card):
             return self.board({"visual": {"type": "asset", "path": "shot.png"}, "duration": 2, "reason": "r",
@@ -214,6 +231,22 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual((cutaway["timeline_start"], cutaway["timeline_duration"]), (1.3, 1.7))
         self.assertEqual(ir["tracks"][0]["clips"][0]["source_out"], 4.0)    # the recording plays on beneath
 
+    def test_a_look_grades_the_picture_and_not_the_graphics(self):
+        lut = self.folder / "warm.cube"
+        lut.write_text("LUT_3D_SIZE 2\n")
+        inputs = dict(self._image(), looks=[{"path": lut.as_posix()}])
+        board = {"script": "s", "look": {"path": "warm.cube", "intensity": 0.7}, "scenes": [
+            {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r"},
+            {"visual": {"type": "asset", "path": "shot.png"}, "duration": 2.0, "reason": "r"}]}
+        ir = produce.build_ir(self.folder, board, BRIEF, inputs)
+        validate(ir, "ir")
+        picture, title = ir["tracks"][0]["clips"][0], ir["tracks"][1]["clips"][0]
+        self.assertEqual(picture["effects"], [{"type": "lut", "params": {"path": lut.as_posix(), "intensity": 0.7}}])
+        self.assertNotIn("effects", title)
+        board.pop("look")           # without a look, nothing is graded
+        plain = produce.build_ir(self.folder, board, BRIEF, inputs)
+        self.assertFalse(any("effects" in c for t in plain["tracks"] for c in t["clips"]))
+
     def test_a_card_stops_at_the_end_of_its_scene(self):
         board = {"script": "s", "scenes": [
             {"visual": {"type": "asset", "path": "shot.png"}, "duration": 2.0, "reason": "r",
@@ -348,6 +381,36 @@ class TestRequests(unittest.TestCase):
                 request = produce.storyboard_request(folder).read_text(encoding="utf-8")
         self.assertIn("`song.mp3` is at 120 BPM, a beat every 0.50 s", request)
         self.assertIn("`cut_to_beat`", request)
+
+    def test_the_storyboard_request_offers_the_creator_s_looks_and_openshot_s(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "colors" / "film_&_vintage").mkdir(parents=True)
+            (folder / "colors" / "film_&_vintage" / "warm_film.cube").write_text("LUT_3D_SIZE 2\n")
+            (folder / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+            requests = []
+            for looks, install in (([{"path": "C:/x/mine.cube"}], folder), ([], None)):
+                (folder / produce.INPUTS_FILE).write_text(json.dumps(
+                    {"prompt": "p", "script": None, "footage": [], "assets": [], "music": [], "looks": looks}),
+                    encoding="utf-8")
+                with mock.patch.object(produce.openshot_build, "install_dir", lambda: install):
+                    requests.append(produce.storyboard_request(folder).read_text(encoding="utf-8"))
+        offered, plain = requests
+        self.assertIn("give it a `look`", offered)
+        self.assertIn("one of the creator's own LUTs (`mine.cube`), or one of OpenShot's "
+                      "(film & vintage: `warm_film.cube`)", offered)
+        self.assertNotIn("give it a `look`", plain)     # no LUT of the creator's, and no OpenShot
+
+    def test_a_look_given_at_prepare_must_be_a_lut(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "notes.cube").write_text("a colour I like")
+            (folder / "warm.cube").write_text('TITLE "warm"\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n')
+            with self.assertRaises(produce.ProduceError):
+                produce.prepare(folder / "out", "p", None, [], [], [], looks=[folder / "notes.cube"])
+            produce.prepare(folder / "out", "p", None, [], [], [], looks=[folder / "warm.cube"])
+            inputs = json.loads((folder / "out" / produce.INPUTS_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(inputs["looks"], [{"path": (folder / "warm.cube").resolve().as_posix()}])
 
     def test_open_questions_stop_the_storyboard(self):
         with tempfile.TemporaryDirectory() as tmp:

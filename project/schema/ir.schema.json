@@ -172,9 +172,24 @@
       "type": "object",
       "required": ["type"],
       "additionalProperties": false,
+      "description": "lut grades the clip's picture through a 3D LUT: OpenShot's Color Map / Lookup effect.",
       "properties": {
         "type": { "type": "string", "minLength": 1 },
         "params": { "type": "object" }
+      },
+      "if": { "properties": { "type": { "const": "lut" } } },
+      "then": {
+        "required": ["params"],
+        "properties": {
+          "params": {
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string", "description": "The .cube file. Empty when the look is switched off on this clip." },
+              "intensity": { "type": "number", "minimum": 0, "maximum": 1, "description": "1 when absent." }
+            }
+          }
+        }
       }
     }
   }

@@ -315,6 +315,58 @@ Not yet: cutting on the bar (the "one") rather than on any beat; cards and
 B-roll come in on their words, not on the beat; an edit does not put cuts back
 on the beat; music whose tempo changes partway has not been tried.
 
+## A look per video
+
+A storyboard can give the video a `look`: a colour LUT on its picture. The
+agent picks one of the creator's own (`--look` at prepare) or one of the 50
+that OpenShot 4.0.1 ships, and the creator approves it with the storyboard.
+Every clip on the main track and the B-roll track gets OpenShot's Color Map /
+Lookup effect with that LUT; titles, cards and captions do not, so the brand's
+colours stay true.
+
+- **OpenShot already has the effect.** libopenshot 1.0.1's `ColorMap` grades
+  a clip through a `.cube` LUT (3D, and 1D too) at an overall intensity from 0
+  to 1. Frameflow writes it exactly as OpenShot puts it on a clip when the
+  creator drops "Color Map / Lookup" on one: libopenshot's own new effect, with
+  the LUT file and intensity set. A test checks that against the engine.
+- **OpenShot ships 50 LUTs** in its `colors/` folder, from freshluts.com, all
+  CC0: cinematic, dark and moody, film stock, teal and orange, vibrant, and a
+  few for correction. Its LUT picker lists them, after the creator's own from
+  `~/.openshot_qt/colors`. The storyboard request lists them by kind, after
+  any the creator gave. OpenShot saves the path of one of its own LUTs as
+  `@colors/...`; Frameflow reads that back from the installed OpenShot.
+- **A missing LUT does nothing, silently.** Rendered through the engine, a
+  clip whose LUT file is not there comes out unchanged, with no error. So a
+  `--look` file must be a `.cube` that declares `LUT_3D_SIZE` or
+  `LUT_1D_SIZE`, and the chosen LUT must still be there at build.
+- **It is switched off clip by clip.** OpenShot has no on/off switch for an
+  effect. Setting a clip's LUT File to None, the first choice in the picker,
+  or removing the effect, switches its look off. Overall Intensity works too,
+  but changing it with the playhead anywhere but the clip's first frame adds a
+  keyframe there, so the look fades out instead of switching off.
+- **Edits keep it.** `edit` reads the effect back into the IR (a clip's
+  `effects`, type `lut`) and writes it again, so a graded project is not
+  refused. Speech an edit puts back, and B-roll it adds, take the look of the
+  picture they join. A look changed beyond its file and a steady intensity - a
+  keyframed intensity, a colour channel turned down, a mask - is still named as
+  something the edit would lose.
+
+Checked on a copy of the six-scene beat reel, given OpenShot's
+`teal_&_orange_cinema.cube` at 0.8 and a B-roll cutaway in its talking scene,
+rendered through OpenShot's engine (`FFmpegWriter`, lossless FFV1) three ways:
+as built, with every clip's LUT set to None, and with no effects at all.
+Against the version with no effects, the two photos, the talking footage, the
+B-roll and the walk clip differ by 19-26 levels of 255 on average; both title
+screens differ by 0.00, and so do the 10,981 pixels of the caption "SIMPLE."
+over the graded footage. With LUT None on every clip, every frame matches the
+version with no effects exactly. Read back, the project has the look on all
+four main clips and the B-roll, and nothing an edit would lose.
+
+Not yet: one switch for the whole video (OpenShot applies effects clip by
+clip, and no edit adds or removes a look yet); the agent picks a LUT by its
+name, without seeing what it does; first cuts and shorts have no look; and the
+brand kit cannot set a default one.
+
 ## Captions, word by word
 
 `--captions` on a first cut, or `"spoken_captions": true` in a storyboard,
@@ -498,9 +550,9 @@ lines and footage in prompt-made videos get it; Shotcut projects do not yet
   get about +2 dB. Rendered through libopenshot: the three shorts went from
   -31.6 to -18.4, -18.0 and -18.8 LUFS, peaks -1.1 to -1.8 dBTP; the Piper reel
   from -19.4 to -16.3, peak -1.0. Getting to -14 needs a limiter or compressor
-  on the voice. OpenShot has a Compressor effect, but `edit` refuses projects
-  with effects today, so adding one means teaching edits to keep effects
-  first.
+  on the voice. OpenShot has a Compressor effect, but `edit` keeps only one
+  kind of effect so far, a LUT (see "A look per video"), so adding one means
+  teaching edits to keep it the same way first.
 - The joins still check clean when louder: 2 of 2, 3 of 3.
 - Measuring the 5.4-minute recording takes about 10 s; each short measures it
   again.

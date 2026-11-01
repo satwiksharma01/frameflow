@@ -7,7 +7,7 @@ approved. A coding agent (Claude Code, ...) is the editor, as in a first cut's
 agent mode; each stage writes a request for it and checks what it writes back.
 
     python -m project.produce <folder> --prepare "<prompt>" [--script FILE]
-           [--footage VIDEO ...] [--asset FILE ...] [--music FILE ...]
+           [--footage VIDEO ...] [--asset FILE ...] [--music FILE ...] [--look LUT ...]
         -> brief_request.md; the agent writes brief.json, the creator confirms it
     python -m project.produce <folder> --storyboard
         -> storyboard_request.md; the agent writes storyboard.json, the creator confirms it
@@ -16,8 +16,10 @@ agent mode; each stage writes a request for it and checks what it writes back.
 
 The project has the picture on the main track (V1), titles and compositions
 on Graphics, captions on Captions (fixed text, or what is said popping in word
-by word), then Voice and Music as audio tracks. It is an ordinary Frameflow
-project afterwards: edit it by hand, or with project.edit.
+by word), then Voice and Music as audio tracks. A storyboard's look grades the
+picture - the main track and B-roll, not graphics or captions - as a LUT
+effect on each clip. It is an ordinary Frameflow project afterwards: edit it by
+hand, or with project.edit.
 """
 import argparse
 import functools
@@ -26,7 +28,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import beats, broll, captions, first_cut, hyperframes, reframe, voiceover
+from project import beats, broll, captions, first_cut, hyperframes, openshot_build, reframe, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
@@ -83,10 +85,16 @@ def _schema(kind: str) -> str:
 
 
 def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
-            assets: list[Path], music: list[Path], language: str = "auto") -> Path:
+            assets: list[Path], music: list[Path], language: str = "auto", looks: list[Path] = ()) -> Path:
+    for path in looks:      # before the footage, whose transcription takes minutes
+        text = path.read_text(encoding="utf-8", errors="replace") if path.suffix.lower() == ".cube" else ""
+        # OpenShot's Color Map reads both kinds of .cube (checked through its engine).
+        if not any(f"LUT_{n}D_SIZE" in text for n in "13"):
+            raise ProduceError(f"{path} is not a LUT: a look is a .cube file, as colour grading apps export them")
     folder.mkdir(parents=True, exist_ok=True)
     inputs = {"prompt": prompt, "script": script.read_text(encoding="utf-8") if script else None,
-              "footage": [], "assets": [], "music": []}
+              "footage": [], "assets": [], "music": [],
+              "looks": [{"path": path.resolve().as_posix()} for path in looks]}
     for video in footage:
         # Each recording is transcribed exactly as for a first cut, into its own folder.
         out = folder / "footage" / video.stem
@@ -120,6 +128,8 @@ def _inventory(inputs: dict) -> str:
         lines.append(f"- asset `{a['path']}` ({detail})")
     for m in inputs["music"]:
         lines.append(f"- music `{m['path']}`, {m['duration']:.1f}s")
+    for look in inputs.get("looks", []):
+        lines.append(f"- look `{look['path']}` (a LUT)")
     if inputs["script"]:
         lines.append("- a script (below)")
     return "\n".join(lines) or "- nothing: the video is made from titles, graphics and a voiceover"
@@ -159,6 +169,17 @@ Work out what the creator wants and write it to `{(folder / BRIEF_FILE).as_posix
 
 
 # --- storyboard ----------------------------------------------------------------------
+
+
+def _openshot_looks() -> list[dict]:
+    """The LUTs OpenShot ships with (CC0, from freshluts.com), in its folders by kind."""
+    install = openshot_build.install_dir()
+    return [{"path": p.as_posix()} for p in sorted((install / "colors").glob("*/*.cube"))] if install else []
+
+
+def _looks(inputs: dict) -> list[dict]:
+    """Every LUT a storyboard may name; the creator's first, so their own wins a shared file name."""
+    return inputs.get("looks", []) + _openshot_looks()
 
 
 def storyboard_request(folder: Path) -> Path:
@@ -202,13 +223,27 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
                   + "; ".join(f"`{name}` is at {beats.tempo(t):.0f} BPM, a beat every {60 / beats.tempo(t):.2f} s"
                               if len(t) > 1 else f"`{name}` has no steady beat" for name, t in found)
                   + ".\n" if found else "")
+    shipped: dict[str, list[str]] = {}
+    for look in _openshot_looks():
+        path = Path(look["path"])
+        shipped.setdefault(path.parent.name.replace("_", " "), []).append(f"`{path.name}`")
+    choices = []
+    if inputs.get("looks"):
+        choices.append("one of the creator's own LUTs ("
+                       + ", ".join(f"`{Path(look['path']).name}`" for look in inputs["looks"]) + ")")
+    if shipped:
+        choices.append("one of OpenShot's (" + "; ".join(f"{kind}: {', '.join(names)}"
+                                                        for kind, names in shipped.items()) + ")")
+    look_note = ("- When the video has a mood to set - a fashion or lifestyle reel, a product ad - give it a `look`, "
+                 "a colour grade on its footage, images and clips (titles, cards and captions keep their colours): "
+                 + ", or ".join(choices) + ". Leave it out to keep the picture as shot.\n" if choices else "")
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 - Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
-{brand_note}{music_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
+{brand_note}{music_note}{look_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
@@ -242,6 +277,12 @@ def check_storyboard(board: dict, inputs: dict) -> list[str]:
     problems = []
     if "music" in board and not _match(board["music"]["path"], inputs["music"], "path"):
         problems.append(f"music {board['music']['path']!r} is not one of the creator's music files")
+    if "look" in board:
+        look = _match(board["look"]["path"], _looks(inputs), "path")
+        if look is None:
+            problems.append(f"look {board['look']['path']!r} is not one of the creator's LUTs or OpenShot's own")
+        elif not Path(look["path"]).is_file():      # OpenShot would quietly leave the picture as it is
+            problems.append(f"look {look['path']} is not there any more")
     for n, scene in enumerate(board["scenes"], start=1):
         visual, label = scene["visual"], f"scene {n} ({scene['visual']['type']})"
         if visual["type"] == "footage":
@@ -337,6 +378,10 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     cut_to_beat = board.get("music", {}).get("cut_to_beat")
     beat_times = [round(frame_align(b, fps), 6) for b in
                   beats.beats(_match(board["music"]["path"], inputs["music"], "path")["path"])] if cut_to_beat else []
+    look = board.get("look")
+    # The look grades the main track's picture, and B-roll takes it from there (broll.place); graphics keep their colours.
+    lut = look and {"path": _match(look["path"], _looks(inputs), "path")["path"],
+                    **({"intensity": look["intensity"]} if "intensity" in look else {})}
 
     for n, scene in enumerate(board["scenes"], start=1):
         visual = scene["visual"]
@@ -398,6 +443,8 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                     x = reframe.clip_offset(_crop_keys(folder, f, width, height), start, end)
                     if x:
                         clip["transform"]["position"] = {"x": x}
+            if lut:
+                clip["effects"] = [{"type": "lut", "params": dict(lut)}]
             main.append(clip)
         heard = None        # what is said in the scene, on the timeline: the narration, else the footage's speech
         if board.get("spoken_captions") or "cards" in scene or "broll" in scene:
@@ -513,6 +560,8 @@ def build(folder: Path, open_it: bool = False) -> Path:
         track = next((t for t in ir["tracks"] if t["id"] == tid), None)
         if track and track["clips"]:
             print(f"    {tid}: {len(track['clips'])} clip(s)")
+    if "look" in board:
+        print(f"    look: {Path(board['look']['path']).name}, a Color Map effect on each picture clip")
     if open_it:
         editor.open(project)
     return project
@@ -529,16 +578,18 @@ def main() -> None:
     parser.add_argument("--footage", type=Path, nargs="*", default=[], help="the creator's recordings")
     parser.add_argument("--asset", type=Path, nargs="*", default=[], help="images or clips to use")
     parser.add_argument("--music", type=Path, nargs="*", default=[], help="music files to choose from")
+    parser.add_argument("--look", type=Path, nargs="*", default=[], help="LUTs (.cube) to choose the look from")
     parser.add_argument("--language", default="auto", help="spoken language of the footage, or 'auto'")
     parser.add_argument("--open", action="store_true", help="open the project in OpenShot when built")
     args = parser.parse_args()
     folder = Path(args.folder)
     try:
         if args.prepare:
-            missing = [p for p in [args.script, *args.footage, *args.asset, *args.music] if p and not p.exists()]
+            missing = [p for p in [args.script, *args.footage, *args.asset, *args.music, *args.look]
+                       if p and not p.exists()]
             if missing:
                 raise ProduceError("not found: " + ", ".join(map(str, missing)))
-            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language)}")
+            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look)}")
         elif args.storyboard:
             print(f"\nNext: read {storyboard_request(folder)}")
         else:

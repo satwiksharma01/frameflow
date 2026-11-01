@@ -18,8 +18,8 @@ from pathlib import Path
 
 from project.compile_mlt import fps_to_fraction, resource_path, sec_to_frames
 from project.media import analyze, probe
-from project.openshot_template import (CLIP_DEFAULTS, CURVES, SCALE_CROP, build_root, keyframe, layer,
-                                       location_units, ratio)
+from project.openshot_template import (CLIP_DEFAULTS, COLOR_MAP, CURVES, SCALE_CROP, build_root, keyframe,
+                                       layer, location_units, ratio)
 from project.sidecar import write_sidecar
 from project.validate import validate
 
@@ -106,6 +106,20 @@ def _framing(clip: dict, reader: dict, width: int, height: int, fps: float) -> d
     return framing
 
 
+def _effects(clip: dict, clip_id: str, project_dir: Path) -> list[dict]:
+    """The clip's effects as OpenShot's own: a LUT is its Color Map / Lookup effect."""
+    effects = []
+    for n, effect in enumerate(clip.get("effects", []), start=1):
+        if effect["type"] != "lut":
+            raise NotImplementedError(f"clip {clip['id']!r}: the {effect['type']!r} effect is not compiled yet")
+        path = effect["params"]["path"]
+        effects.append({**json.loads(json.dumps(COLOR_MAP)), "id": f"{clip_id}E{n}",
+                        # An empty path is OpenShot's "None": the look switched off.
+                        "lut_path": resource_path(path, project_dir) if path else "",
+                        "intensity": keyframe(effect["params"].get("intensity", 1.0))})
+    return effects
+
+
 def _audio_reader(path: str, source: str, fps: float) -> tuple[dict, float]:
     """A sound file's reader, with the fields libopenshot gives one itself.
 
@@ -187,9 +201,10 @@ def build_osp(ir: dict, project_dir: Path) -> dict:
                     f"clip {clip['id']!r} ends at source frame {in_f + length_f}, beyond the "
                     f"{frames} frames of {clip['source']}"
                 )
+            clip_id = f"FFCLIP{len(clips) + 1:04d}"
             clips.append({
                 **json.loads(json.dumps(CLIP_DEFAULTS)),
-                "id": f"FFCLIP{len(clips) + 1:04d}",
+                "id": clip_id,
                 "layer": layer(index, track["id"])["number"],
                 "position": start_f / fps,
                 "start": in_f / fps,
@@ -200,6 +215,7 @@ def build_osp(ir: dict, project_dir: Path) -> dict:
                 "reader": reader,
                 **_levels(clip, in_f, length_f, fps),
                 **_framing(clip, reader, project["width"], project["height"], fps),
+                "effects": _effects(clip, clip_id, project_dir),
             })
             end = max(end, (start_f + length_f) / fps)
 

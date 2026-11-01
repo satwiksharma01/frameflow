@@ -75,7 +75,7 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | B-roll and stock | 16 stock sources, CLIP search | The creator's own images and clips on a B-roll track, anchored to what is said and moved by later edits; no stock |
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music, with the cuts on its beat when asked |
 | Generated pictures and video | Many providers | None |
-| Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; aspect and loudness per platform |
+| Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; a colour LUT per video on the picture; aspect and loudness per platform |
 | Checks on the picture | After every render | Done by hand while building features, not part of the pipeline |
 | Cost control | Yes | Nothing paid yet, so not needed yet |
 
@@ -181,6 +181,13 @@ The format the creator posts most, and the shortest path from what exists.
   beat; the fifth stayed off the beat to keep a word whole (see findings).
 - **A look per video:** a colour LUT as an OpenShot effect the creator can
   switch off.
+  *Status:* built and checked (2026-11-01): a storyboard's `look` is one of
+  the creator's own LUTs (`--look`) or one of the 50 OpenShot ships (CC0), put
+  on every footage, image, clip and B-roll clip as OpenShot's Color Map effect;
+  titles, cards and captions keep their colours. Edits keep it. Rendered through
+  OpenShot's engine: every picture frame graded, the titles and the caption's
+  own pixels unchanged, and with the LUT set to None on each clip the video
+  came back exactly as built without a look (see findings).
 
 ### 3. "Make it like this"
 

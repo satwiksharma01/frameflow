@@ -108,6 +108,23 @@ class TestParseOpenShotSave(unittest.TestCase):
     def test_no_provenance_without_a_sidecar(self):
         self.assertEqual(self.ir["project"]["source_frame_rate_mode"], "cfr")
 
+    def test_one_of_openshots_own_luts_is_read_from_its_colors_folder(self):
+        """OpenShot saves the path of a LUT it ships with as @colors/..."""
+        from project import openshot_build
+        from project.openshot_template import COLOR_MAP
+        if openshot_build.install_dir() is None:
+            self.skipTest("OpenShot is not installed")
+        data = json.loads(OPENSHOT_SAVED.read_text(encoding="utf-8"))
+        data["clips"][0]["effects"].append(
+            {**COLOR_MAP, "id": "E1", "lut_path": "@colors/cinematic_&_blockbuster/warm_cinema.cube"})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "p.osp"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            graded = [c for t in parse_osp(path)["tracks"] for c in t["clips"] if "effects" in c]
+        lut = Path(graded[0]["effects"][0]["params"]["path"])
+        self.assertEqual(lut, openshot_build.install_dir() / "colors" / "cinematic_&_blockbuster" / "warm_cinema.cube")
+        self.assertTrue(lut.is_file())
+
     def _broken(self, change) -> Path:
         data = json.loads(OPENSHOT_SAVED.read_text(encoding="utf-8"))
         change(data)
@@ -188,6 +205,17 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual([c["transform"] for c in parsed["tracks"][0]["clips"]],
                          [still["transform"], panned["transform"]])
 
+    def test_a_look_round_trips(self):
+        """Graded through a LUT at 80%, and switched off on the second clip: OpenShot's None."""
+        graded = _clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)
+        graded["effects"] = [{"type": "lut", "params": {
+            "path": (Path(self.tmp.name).resolve() / "warm.cube").as_posix(), "intensity": 0.8}}]
+        off = _clip("clip2", NORMALIZED_MEDIA, 4.0, 2.0, 2.0)
+        off["effects"] = [{"type": "lut", "params": {"path": ""}}]
+        parsed = self.compile_and_parse(_ir([{"id": "V1", "type": "video", "clips": [graded, off]}]))
+        self.assertEqual([c["effects"] for c in parsed["tracks"][0]["clips"]],
+                         [graded["effects"], off["effects"]])
+
     def test_the_sidecar_restores_what_openshot_cannot_hold(self):
         ir = _ir([{"id": "V1", "type": "broll",
                    "clips": [_clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)]}])
@@ -252,6 +280,16 @@ class TestCompiledProject(unittest.TestCase):
         fade = {"Points": keyframe(0.0, x=151.0)["Points"] + keyframe(1.0, x=181.0)["Points"]}
         self.assertEqual(written["alpha"], fade)
         self.assertEqual(written["volume"], fade)
+
+    def test_a_look_is_openshots_color_map_effect(self):
+        """With its LUT referenced relatively, as OpenShot saves it."""
+        from project.openshot_template import COLOR_MAP, keyframe
+        clip = _clip("c1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)
+        clip["effects"] = [{"type": "lut", "params": {
+            "path": (Path(self.tmp.name) / "looks" / "warm.cube").as_posix(), "intensity": 0.8}}]
+        written = self.compile(_ir([{"id": "V1", "type": "video", "clips": [clip]}]))["clips"][0]
+        self.assertEqual(written["effects"], [{**COLOR_MAP, "id": "FFCLIP0001E1",
+                                               "lut_path": "looks/warm.cube", "intensity": keyframe(0.8)}])
 
     def test_a_clip_past_the_end_of_its_source_is_refused(self):
         with self.assertRaises(ValueError):
@@ -318,6 +356,22 @@ class TestUnsupportedContent(unittest.TestCase):
     def test_an_effect_on_a_clip(self):
         self.track1[0]["effects"].append({"class_name": "Brightness", "id": "E1"})
         self.assertEqual(self.found(), ["the Brightness effect on clip 1 on Track 1"])
+
+    def test_a_look_is_carried_not_named(self):
+        """Color Map / Lookup, its LUT and its intensity chosen: what Frameflow writes for a look."""
+        from project.openshot_template import COLOR_MAP, keyframe
+        self.track1[0]["effects"].append({**COLOR_MAP, "id": "E1", "lut_path": "looks/warm.cube",
+                                          "intensity": keyframe(0.5)})
+        self.assertEqual(self.found(), [])
+
+    def test_a_look_changed_beyond_its_lut_and_intensity_is_named(self):
+        """Its red turned down; and its intensity set at frame 90, where OpenShot adds a point."""
+        from project.openshot_template import COLOR_MAP, keyframe
+        self.track1[0]["effects"].append({**COLOR_MAP, "id": "E1", "intensity_r": keyframe(0.5)})
+        self.track1[1]["effects"].append({**COLOR_MAP, "id": "E2", "intensity": {"Points": keyframe(1.0)["Points"] + [
+            {"co": {"X": 90, "Y": 0.0}, "interpolation": 1}]}})
+        self.assertEqual(self.found(), ["the ColorMap effect on clip 1 on Track 1",
+                                        "the ColorMap effect on clip 2 on Track 1"])
 
     def test_a_title_or_image_clip(self):
         self.track1[0]["reader"]["type"] = "QtImageReader"
@@ -492,6 +546,59 @@ class TestFramingInTheEngine(unittest.TestCase):
                 lefts.append(next(x for x in range(image.width) if image.getpixel((x, 960)) > 128))
         # Centred, the bar's left edge is at the frame's middle; moved by 0.1, 108 px right.
         self.assertEqual(lefts, [540, 648])
+
+
+class TestLookInTheEngine(unittest.TestCase):
+    """A look as OpenShot's own engine applies it."""
+
+    def setUp(self):
+        from project import openshot_build
+        if not _have_profiles() or openshot_build.install_dir() is None:
+            self.skipTest("OpenShot is not installed")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_effect_is_the_one_openshot_puts_on_a_clip(self):
+        """OpenShot adds libopenshot's new effect, with an id of its own."""
+        from project import openshot_build
+        from project.openshot_template import COLOR_MAP
+        root = Path(self.tmp.name)
+        (root / "new.py").write_text("import json, sys, openshot\n"
+                                     "e = json.loads(openshot.EffectInfo().CreateEffect('ColorMap').Json())\n"
+                                     "e.pop('id')\n"
+                                     "json.dump(e, open(sys.argv[1], 'w'))\n", encoding="utf-8")
+        result = openshot_build.run_script(root / "new.py", str(root / "new.json"))
+        self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+        self.assertEqual(json.loads((root / "new.json").read_text()), COLOR_MAP)
+
+    def test_a_lut_grades_the_picture_and_none_switches_it_off(self):
+        """A LUT that swaps red and blue, on a red clip."""
+        from PIL import Image
+        from project import openshot_build
+        from project.compile_osp import compile_file
+        root = Path(self.tmp.name)
+        red = root / "red.mp4"
+        subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                        "color=c=0xC83214:size=320x180:rate=30:duration=1", "-pix_fmt", "yuv420p", str(red)],
+                       check=True)
+        # One output colour per input corner, red changing fastest: (r, g, b) -> (b, g, r).
+        (root / "swap.cube").write_text("LUT_3D_SIZE 2\n" + "".join(
+            f"{b} {g} {r}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1)), encoding="utf-8")
+        (root / "frame.py").write_text(TestFramingInTheEngine.FRAME, encoding="utf-8")
+        pixels = []
+        for lut in ((root / "swap.cube").as_posix(), ""):
+            clip = _clip("clip1", red, 0.0, 0.0, 1.0)
+            clip["effects"] = [{"type": "lut", "params": {"path": lut}}]
+            (root / "p.ir.json").write_text(json.dumps(_ir([{"id": "V1", "type": "video", "clips": [clip]}])),
+                                            encoding="utf-8")
+            osp = compile_file(root / "p.ir.json", root / "p.osp")
+            result = openshot_build.run_script(root / "frame.py", str(osp), str(root / "f.png"), "15", cwd=root)
+            self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+            pixels.append(Image.open(root / "f.png").convert("RGB").getpixel((960, 540)))
+        graded, off = pixels
+        self.assertGreater(off[0] - off[2], 150)        # without the look, still red
+        for got, want in zip(graded, reversed(off)):
+            self.assertAlmostEqual(got, want, delta=2)
 
 
 if __name__ == "__main__":

@@ -81,6 +81,38 @@ CLIP_DEFAULTS = {
 }
 
 
+# The Color Map / Lookup effect as OpenShot 4.0.1 puts it on a clip - libopenshot's
+# EffectInfo().CreateEffect("ColorMap").Json() - less the random id it gets. It
+# grades the picture through a 3D LUT (.cube) before the clip is scaled or moved.
+COLOR_MAP = {
+    "apply_before_clip": True,
+    "class_name": "ColorMap",
+    "description": "Adjust colors using 3D LUT lookup tables (.cube format)",
+    "duration": 0.0,
+    "end": 0.0,
+    "has_audio": False,
+    "has_tracked_object": False,
+    "has_video": True,
+    "intensity": keyframe(1.0),
+    "intensity_b": keyframe(1.0),
+    "intensity_g": keyframe(1.0),
+    "intensity_r": keyframe(1.0),
+    "layer": 0,
+    "lut_path": "",
+    "mask_invert": False,
+    "mask_loop_mode": 0,
+    "mask_reader": {},
+    "mask_source_id": "",
+    "mask_time_mode": 1,
+    "name": "Color Map / Lookup",
+    "order": 0,
+    "parent_effect_id": "",
+    "position": 0.0,
+    "start": 0.0,
+    "type": "ColorMap",
+}
+
+
 # libopenshot's scale modes: cover the frame, cropping what overflows, or fit inside it.
 SCALE_CROP, SCALE_FIT = 0, 1
 

@@ -69,6 +69,14 @@ class TestPlacing(unittest.TestCase):
         self.assertNotIn("volume_db", clip)             # a still has no sound to turn down
         validate(ir, "ir")
 
+    def test_b_roll_has_the_look_of_the_picture_it_cuts_away_from(self):
+        ir = _ir()
+        look = [{"type": "lut", "params": {"path": "C:/looks/warm.cube"}}]
+        ir["tracks"][0]["clips"][0]["effects"] = look
+        self.assertEqual(broll.place(ir, [self.item(self.image, 1.0)], 0), [])
+        self.assertEqual(ir["tracks"][1]["clips"][0]["effects"], look)
+        validate(ir, "ir")
+
     def test_b_roll_stops_at_the_end_of_the_video(self):
         ir = _ir()
         self.assertEqual(broll.place(ir, [self.item(self.image, 9.0, 3.0)], 0), [])

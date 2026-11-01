@@ -14,7 +14,9 @@ import json
 import math
 from pathlib import Path
 
-from project.openshot_template import CLIP_DEFAULTS, CURVES, SCALE_CROP, SCALE_FIT, keyframe, location_units
+from project import openshot_build
+from project.openshot_template import (CLIP_DEFAULTS, COLOR_MAP, CURVES, SCALE_CROP, SCALE_FIT, keyframe,
+                                       location_units)
 from project.sidecar import merge_sidecar, read_sidecar
 from project.validate import validate
 
@@ -127,10 +129,37 @@ def _framing(clip: dict, width: int, height: int, fps: float) -> dict | None:
     return {"transform": {"fill": True, **({"position": position} if position else {})}}
 
 
+# How OpenShot saves the path of a LUT it ships with.
+_OWN_LUTS = "@colors/"
+
+
+def _lut(effect: dict, project_dir: Path, fps: float, clip: dict) -> dict | None:
+    """A Color Map / Lookup effect as an IR LUT, or None for any other effect, or
+    for one changed in a way the IR cannot hold: only its LUT file and a steady
+    intensity may differ from what OpenShot gives a new one."""
+    if (effect.get("type") != "ColorMap" or set(effect) - set(COLOR_MAP) - {"id"}
+            or any(effect.get(k) != v for k, v in COLOR_MAP.items() if k not in ("lut_path", "intensity"))):
+        return None
+    level = _curve(effect.get("intensity", COLOR_MAP["intensity"]), fps, clip)
+    path = effect.get("lut_path") or ""
+    install = openshot_build.install_dir()
+    if level is None or level[1] or level[2] or (path.startswith(_OWN_LUTS) and install is None):
+        return None
+    if path.startswith(_OWN_LUTS):
+        path = (install / "colors" / path[len(_OWN_LUTS):]).as_posix()
+    elif path and not Path(path).is_absolute():
+        path = (project_dir / path).resolve().as_posix()
+    params = {"path": Path(path).as_posix() if path else ""}
+    if level[0] != 1:
+        params["intensity"] = round(level[0], _PRECISION)
+    return {"type": "lut", "params": params}
+
+
 def _parse_clip(clip: dict, n: int, project_dir: Path, fps: float, width: int, height: int) -> dict:
     start, end = clip["start"], clip["end"]
     if end <= start:
         raise ParseError(f"clip {clip.get('id')!r} has non-positive length")
+    effects = [e for e in (_lut(x, project_dir, fps, clip) for x in clip.get("effects") or []) if e]
     # Clip ids are positional, as the MLT parser's are, so the rest of the
     # pipeline sees the same shape whichever editor the project came from.
     return {
@@ -140,9 +169,10 @@ def _parse_clip(clip: dict, n: int, project_dir: Path, fps: float, width: int, h
         "source_out": round(end, _PRECISION),
         "timeline_start": round(clip["position"], _PRECISION),
         "timeline_duration": round(end - start, _PRECISION),
-        # Curves the IR cannot hold are reported by unsupported_content, not here.
+        # Curves and effects the IR cannot hold are reported by unsupported_content, not here.
         **(_levels(clip, fps) or {}),
         **(_framing(clip, width, height, fps) or {}),
+        **({"effects": effects} if effects else {}),
     }
 
 
@@ -212,8 +242,8 @@ def unsupported_content(path: Path | str) -> list[str]:
     An allowlist, as for Shotcut: a clip whose settings differ from what
     OpenShot gives an untouched clip - zoomed, rotated, sped up, muted, moved
     while fitting the frame, a hand-drawn opacity, volume or position curve -
-    or that carries an effect would be rewritten without it. Each item is a
-    sentence a creator can act on.
+    or that carries an effect other than a LUT at a steady intensity would be
+    rewritten without it. Each item is a sentence a creator can act on.
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     fps = data["fps"]["num"] / data["fps"]["den"]
@@ -234,8 +264,9 @@ def unsupported_content(path: Path | str) -> list[str]:
             if reader_type != "FFmpegReader":
                 found.append(f"a clip of type {reader_type or 'unknown'}, {where}")
             for effect in clip.get("effects") or []:
-                found.append(f"the {effect.get('class_name') or effect.get('type') or 'unnamed'} "
-                             f"effect on {where}")
+                if _lut(effect, Path(path).resolve().parent, fps, clip) is None:
+                    found.append(f"the {effect.get('class_name') or effect.get('type') or 'unnamed'} "
+                                 f"effect on {where}")
             # Fades, steady levels and the framing of a filled clip carry over as IR
             # fields; other curves do not.
             carried = {"effects"} | ({"alpha", "volume"} if _levels(clip, fps) is not None else set())

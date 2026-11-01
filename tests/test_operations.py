@@ -143,6 +143,14 @@ class TestRestore(unittest.TestCase):
         result = run(project, op("restore", 6, 10))
         self.assertEqual(result["tracks"][0]["clips"][1]["volume_db"], 13.2)
 
+    def test_what_is_put_back_has_the_look_of_the_recording_around_it(self):
+        look = [{"type": "lut", "params": {"path": "C:/looks/warm.cube", "intensity": 0.8}}]
+        project = ir((0, 4), (12, 15))
+        for clip in project["tracks"][0]["clips"]:
+            clip["effects"] = look
+        result = run(project, op("restore", 6, 10))
+        self.assertEqual([c["effects"] for c in result["tracks"][0]["clips"]], [look] * 3)
+
     def test_restoring_what_is_already_there_is_reported(self):
         self.assertIn("already in the cut", check(op("restore", 1, 3), self.BASE, UNCHANGED)[0])
 

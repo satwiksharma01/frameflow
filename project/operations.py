@@ -250,12 +250,12 @@ def _restore(pieces: list[dict], op: Operation, fps: float) -> tuple[list[dict],
             previous.update({"out": end, "by": op.index})
             target, at = previous, at - 1
         else:
-            # Put back framed and levelled as the recording around it is, e.g. cropped to vertical.
+            # Put back framed, levelled and graded as the recording around it is, e.g. cropped to vertical.
             near = next((p for p in (previous, pieces[at] if at < len(pieces) else None)
                          if p and source_key(p["source"]) == key
-                         and {"transform", "volume_db"} & p["extra"].keys()), None)
+                         and {"transform", "volume_db", "effects"} & p["extra"].keys()), None)
             target = {"source": op.source, "in": start, "out": end, "gap": 0.0, "by": op.index,
-                      "extra": {k: near["extra"][k] for k in ("transform", "volume_db")
+                      "extra": {k: near["extra"][k] for k in ("transform", "volume_db", "effects")
                                 if near and k in near["extra"]}}
             pieces.insert(at, target)
         following = pieces[at + 1] if at + 1 < len(pieces) else None

@@ -7,6 +7,7 @@ the speaker show around it, and an image gets the same slow push in as an image
 scene. They sit on a B-roll track just above the main track, below graphics and
 captions, as ordinary clips the creator can move, trim or delete.
 """
+import copy
 import hashlib
 from pathlib import Path
 
@@ -60,6 +61,10 @@ def place(ir: dict, items: list[dict], main: int) -> list[str]:
             if info.has_audio:
                 clip["volume_db"] = MUTED_DB
         clip["transform"] = {"fill": True}
+        under = next((c for c in ir["tracks"][main]["clips"]
+                      if c["timeline_start"] <= at < c["timeline_start"] + c["timeline_duration"]), None)
+        if under and "effects" in under:        # graded like the picture it cuts away from
+            clip["effects"] = copy.deepcopy(under["effects"])
         track["clips"].append(clip)
     track["clips"].sort(key=lambda c: c["timeline_start"])
     for n, clip in enumerate(track["clips"], start=1):

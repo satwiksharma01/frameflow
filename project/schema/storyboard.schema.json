@@ -31,6 +31,16 @@
         }
       }
     },
+    "look": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "description": "Optional: a colour grade on the whole video's footage, images and clips, B-roll included, but not its titles, cards or captions. It is a LUT effect on each clip, which the creator can switch off clip by clip in OpenShot.",
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "description": "One of the LUTs listed in the request: the creator's own, or one of OpenShot's by its file name." },
+        "intensity": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Optional: how strongly it grades, 1 (the LUT as made) when absent." }
+      }
+    },
     "spoken_captions": {
       "type": "boolean",
       "description": "Optional: show what is said as captions that pop in word by word - the narration, or the speech in footage that has no narration. A scene with its own caption shows that instead. Usual for reels and shorts."
