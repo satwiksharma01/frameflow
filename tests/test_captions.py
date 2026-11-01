@@ -219,6 +219,14 @@ class TestPiperWordTimings(unittest.TestCase):
             (Path(tmp) / "en_US-ljspeech-high.onnx").write_bytes(b"")
             self.assertEqual(voiceover.voices(), ["en_US-ljspeech-high", "Microsoft Zira Desktop"])
 
+    def test_without_windows_powershell_piper_s_voices_are_still_offered(self):
+        def no_powershell(script):
+            raise voiceover.VoiceError("the built-in voice needs Windows PowerShell")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(voiceover, "PIPER_DIR", Path(tmp)), \
+                mock.patch.object(voiceover, "_powershell", no_powershell):
+            (Path(tmp) / "en_US-ljspeech-high.onnx").write_bytes(b"")
+            self.assertEqual(voiceover.voices(), ["en_US-ljspeech-high"])
+
     @unittest.skipUnless((voiceover.PIPER_DIR / f"{voiceover.DEFAULT_PIPER_VOICE}.onnx").exists(),
                          "the Piper voice is not installed")
     def test_piper_reads_a_line_with_a_time_for_every_word(self):

@@ -14,7 +14,7 @@
       "clips": [
         {
           "id": "clip1",
-          "source": "E:/my projects/frameflow/media/meet-recording-cfr30.mp4",
+          "source": "media/meet-recording-cfr30.mp4",
           "source_in": 0.0,
           "source_out": 5.0,
           "timeline_start": 0.0,
@@ -22,7 +22,7 @@
         },
         {
           "id": "clip2",
-          "source": "E:/my projects/frameflow/media/meet-recording-cfr30.mp4",
+          "source": "media/meet-recording-cfr30.mp4",
           "source_in": 8.0,
           "source_out": 13.0,
           "timeline_start": 5.0,
@@ -36,7 +36,7 @@
       "clips": [
         {
           "id": "clip1",
-          "source": "E:/my projects/frameflow/media/synthetic-talk.mp4",
+          "source": "media/synthetic-talk.mp4",
           "source_in": 2.0,
           "source_out": 5.0,
           "timeline_start": 3.0,

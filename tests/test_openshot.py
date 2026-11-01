@@ -519,11 +519,11 @@ class TestFramingInTheEngine(unittest.TestCase):
              "t.Close()\n")
 
     def test_a_tenth_of_the_frame_moves_the_picture_108_pixels(self):
-        from PIL import Image
         from project import openshot_build
         from project.compile_osp import compile_file
         if not _have_profiles() or openshot_build.install_dir() is None:
             self.skipTest("OpenShot is not installed")
+        from PIL import Image       # only for reading the engine's frame
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bar = root / "bar.mp4"
