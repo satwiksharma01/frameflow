@@ -1,5 +1,7 @@
 # Frameflow
 
+[![CI](https://github.com/satwiksharma01/frameflow/actions/workflows/ci.yml/badge.svg)](https://github.com/satwiksharma01/frameflow/actions/workflows/ci.yml)
+
 An AI editor that makes the first cut of a raw recording **as a fully editable OpenShot project** — never a flattened render. Open the result in [OpenShot](https://github.com/OpenShot/openshot-qt) and every cut is a real clip you can move, trim or undo. Then ask for changes in plain words, and they land on top of whatever you changed by hand.
 
 ```
@@ -9,6 +11,21 @@ raw recording  →  first cut (a real .osp project)  →  you edit in OpenShot  
 Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and you get a Shotcut `.mlt` project instead; changes work on either.
 
 > **Status: early and experimental.** Cutting talking-head and screen recordings works end to end on real footage. Stock footage and generated pictures or video are not built. Developed and tested on Windows 11 only.
+
+## Try the core logic in two minutes
+
+This synthetic example needs Python and `jsonschema` only. It does not download a Whisper model, read a recording, call an API, or need Shotcut:
+
+```bash
+git clone https://github.com/satwiksharma01/frameflow.git
+cd frameflow
+python -m pip install "jsonschema>=4.26.0"
+python -m examples.demo_timeline
+```
+
+It removes an illustrative two-second pause from a ten-second source and writes the validated edit plan and timeline to `output/demo/`. The second kept clip starts at 4.8 seconds in the source and 2.8 seconds in the output. The source path is a placeholder: this demonstrates timeline construction, not speech recognition, cut quality or a playable export. CI runs this command on Linux and Windows.
+
+[Engineering decisions and evidence](docs/ENGINEERING.md) · [Contributing](CONTRIBUTING.md)
 
 ## What it does
 
@@ -181,7 +198,7 @@ Two rules come from things that went wrong on real recordings:
 python -m unittest discover tests
 ```
 
-Tests that need recordings, which are not committed, skip themselves when the media is missing; so do tests that write OpenShot projects when OpenShot is not installed.
+CI runs the tests on Linux and Windows with Python 3.13. Tests that need recordings, which are not committed, skip themselves when the media is missing; so do tests that write OpenShot projects when OpenShot is not installed. These checks do not validate a full OpenShot/Whisper workflow or a live model-provider endpoint.
 
 ## License
 

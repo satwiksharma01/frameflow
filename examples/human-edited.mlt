@@ -20,7 +20,7 @@
   <producer id="producer0" in="00:00:00.000" out="00:00:25.700">
     <property name="length">772</property>
     <property name="eof">pause</property>
-    <property name="resource">E:/my projects/frameflow/media/meet-recording-cfr30.mp4</property>
+    <property name="resource">../media/meet-recording-cfr30.mp4</property>
     <property name="meta.media.nb_streams">2</property>
     <property name="meta.media.0.stream.type">video</property>
     <property name="meta.media.0.stream.frame_rate">30</property>
@@ -79,7 +79,7 @@
   <producer id="producer1" in="00:00:00.000" out="00:00:25.700">
     <property name="length">772</property>
     <property name="eof">pause</property>
-    <property name="resource">E:/my projects/frameflow/media/meet-recording-cfr30.mp4</property>
+    <property name="resource">../media/meet-recording-cfr30.mp4</property>
     <property name="meta.media.nb_streams">2</property>
     <property name="meta.media.0.stream.type">video</property>
     <property name="meta.media.0.stream.frame_rate">30</property>

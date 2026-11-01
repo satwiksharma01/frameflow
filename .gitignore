@@ -7,6 +7,9 @@ env/
 # Generated knowledge-graph cache, not source
 graphify-out/
 
+# Temporary directories used by local test runs
+.test-tmp/
+
 # Normalized working media - regenerable from the original source
 media/
 
