@@ -68,7 +68,10 @@ def _powershell(script: str, **env: str) -> subprocess.CompletedProcess:
 def voices() -> list[str]:
     """Installed voices, Piper's first (default voice first), so a storyboard without one gets Piper."""
     piper = sorted((p.stem for p in PIPER_DIR.glob("*.onnx")), key=lambda name: name != DEFAULT_PIPER_VOICE)
-    result = _powershell(_LIST)
+    try:
+        result = _powershell(_LIST)
+    except VoiceError:      # no Windows PowerShell, so no Windows voices: off Windows, Piper's are all there are
+        return piper
     return piper + [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
