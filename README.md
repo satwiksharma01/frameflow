@@ -14,7 +14,7 @@ Prefer [Shotcut](https://shotcut.org)? Add `--editor shotcut` to a first cut and
 
 ## Try the core logic in two minutes
 
-This synthetic example needs Python and `jsonschema` only. It does not download a Whisper model, read a recording, call an API, or need Shotcut:
+This synthetic example needs Python and `jsonschema` only. It does not download a Whisper model, read a recording, call an API, or need OpenShot:
 
 ```bash
 git clone https://github.com/satwiksharma01/frameflow.git
@@ -149,7 +149,7 @@ python -m project.edit "output/recording/recording.osp" --apply --open
 
 Or in one step with an API key: `python -m project.edit "<project.osp>" "<what to change>"`. A Shotcut `.mlt` project works the same way.
 
-Changes are `remove` and `restore` on spans of the recording. Reordering clips, and editing anything but the main video track, are not supported yet.
+Changes remove and restore spans of the recording, and add graphics and B-roll at moments of it. Reordering clips is not supported yet.
 
 ## What gets written
 
@@ -181,6 +181,7 @@ Two rules come from things that went wrong on real recordings:
 |---|---|
 | `project/first_cut.py`, `project/shorts.py`, `project/edit.py`, `project/produce.py` | The commands: cut a recording, cut shorts from it, change a project, make a video from a prompt |
 | `project/hyperframes.py`, `project/captions.py`, `project/voiceover.py` | Titles and cards rendered by HyperFrames; word-by-word captions; the voiceover |
+| `project/reframe.py`, `project/broll.py`, `project/beats.py` | Framing on your face for vertical; cutaways to your own images and clips; the music's beat |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |
 | `project/cutpoints.py`, `project/verify_cuts.py` | Placing cuts in pauses, and listening to them afterwards |
 | `project/reconcile.py`, `project/operations.py` | Working out your hand edits; applying changes without undoing them |
@@ -190,7 +191,7 @@ Two rules come from things that went wrong on real recordings:
 | `project/compile_mlt.py`, `project/parse_mlt.py` | Writing and reading Shotcut projects |
 | `project/schema/` | JSON Schemas for the project model, edit plans, operations, briefs and storyboards |
 | `project/providers/` | Anthropic and OpenAI-compatible model providers |
-| `examples/` | Real projects saved by OpenShot and Shotcut, used as test fixtures |
+| `examples/` | Real projects saved by OpenShot and Shotcut, used as test fixtures, and `demo_timeline.py`, the synthetic demo |
 
 ## Tests
 
@@ -198,7 +199,7 @@ Two rules come from things that went wrong on real recordings:
 python -m unittest discover tests
 ```
 
-CI runs the tests on Linux and Windows with Python 3.13. Tests that need recordings, which are not committed, skip themselves when the media is missing; so do tests that write OpenShot projects when OpenShot is not installed. These checks do not validate a full OpenShot/Whisper workflow or a live model-provider endpoint.
+CI runs the tests on Linux and Windows with Python 3.13 and FFmpeg. Tests that need recordings, which are not committed, skip themselves when the media is missing; so do tests that write OpenShot projects when OpenShot is not installed. These checks do not validate a full OpenShot/Whisper workflow or a live model-provider endpoint.
 
 ## License
 
