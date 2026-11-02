@@ -157,8 +157,10 @@ def build_context(instruction: str, ir: dict, changes: HumanChanges, timing: dic
     others = [t for i, t in enumerate(ir["tracks"]) if i != main_index(ir) and t["clips"]]
     if others:
         parts.append("## Other tracks\n\n" + "\n".join(
-            f"- {t['id']} ({t['type']}): {len(t['clips'])} clip(s). Operations do not touch these, "
-            f"and they keep their positions when the main track changes." for t in others))
+            f"- {t['id']} ({t['type']}): {len(t['clips'])} clip(s). " + (
+                "The screen recording, cut wherever the main track is cut." if t["type"] == "screen" else
+                "Operations do not touch these, and they keep their positions when the main track changes.")
+            for t in others))
     return "\n\n".join(parts)
 
 

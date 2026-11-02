@@ -12,6 +12,8 @@
 `--vertical` makes a 9:16 video: the recording fills the frame, and the crop
 follows the speaker's face in a few smooth moves. It stays a clip setting the
 creator can move in OpenShot.
+`--screen <recording>` puts a screen recording made at the same time under the
+face, which goes small in the corner of a 16:9 frame (see screen.py).
 
 Two ways to run the edit step:
 
@@ -36,6 +38,7 @@ import json
 import sys
 from pathlib import Path
 
+from project import screen
 from project.captions import add as add_captions, runs_from_cut
 from project.editor_agent import (
     NoSpeechError,
@@ -137,7 +140,7 @@ def load_plan(out_dir: Path, transcript: dict) -> dict:
 
 def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
           editor: Editor = EDITORS[DEFAULT], captions: bool = False, vertical: bool = False,
-          name: str | None = None) -> Path:
+          name: str | None = None, screen_recording: Path | None = None) -> Path:
     name = name or video.stem
     transcript = json.loads((out_dir / TRANSCRIPT_FILE).read_text(encoding="utf-8"))
     source = Path(transcript["source"])
@@ -181,6 +184,21 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
                 clip["volume_db"] = gain
             print(f"    speech at {lufs:.1f} LUFS, set to {lufs + gain:.1f} ({gain:+.1f} dB)"
                   + ("; any louder and its peaks would clip" if lufs + gain < TARGET_LUFS - 0.5 else ""))
+    if screen_recording:
+        _step(f"Putting your face in the corner of {screen_recording.name}")
+        shown = analyze(screen_recording)
+        if not shown.has_audio:
+            raise MediaError(f"{screen_recording.name} has no sound, so there is no voice to line it up with "
+                             f"{source.name} by: record your voice into both")
+        if shown.is_vfr:
+            fps = choose_cfr_rate(shown.measured_fps)
+            print(f"    variable frame rate ({shown.measured_fps:.2f} fps measured); normalizing to {fps} fps")
+            screen_recording = normalize_to_cfr(screen_recording, out_dir / f"{screen_recording.stem}-cfr{fps}.mp4", fps)
+            shown = analyze(screen_recording)
+        shift = screen.offset(source, screen_recording)
+        print(f"    lined up by your voice: it was started {abs(shift):.2f}s "
+              f"{'before' if shift >= 0 else 'after'} {source.name}")
+        screen.lay_out(ir, screen_recording, shift, shown.duration_seconds, (info.width, info.height))
     if vertical:
         _step("Following the face for the vertical crop")
         ir["project"]["width"], ir["project"]["height"] = VERTICAL
@@ -230,7 +248,7 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
 def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str | None,
               model: str | None, base_url: str | None, language: str,
               verify: bool = True, editor: Editor = EDITORS[DEFAULT], captions: bool = False,
-              vertical: bool = False) -> Path:
+              vertical: bool = False, screen_recording: Path | None = None) -> Path:
     provider = get_provider(provider_name, model, base_url)
     transcript = prepare(video, out_dir, language)
 
@@ -239,7 +257,8 @@ def first_cut(video: Path, out_dir: Path, brief: str | None, provider_name: str 
     _write_json(out_dir / PLAN_FILE, plan)
     if provider.served_by and provider.served_by != provider.model:
         print(f"    served by {provider.served_by} (fallback)")
-    return build(video, out_dir, plan, verify=verify, editor=editor, captions=captions, vertical=vertical)
+    return build(video, out_dir, plan, verify=verify, editor=editor, captions=captions, vertical=vertical,
+                 screen_recording=screen_recording)
 
 
 def _command(video: Path, out: str | None, *flags: str) -> str:
@@ -269,6 +288,9 @@ def main() -> None:
                         help="add captions that pop in word by word as they are said")
     parser.add_argument("--vertical", action="store_true",
                         help="make a 9:16 video, the recording filling the frame (OpenShot only)")
+    parser.add_argument("--screen", metavar="RECORDING",
+                        help="a screen recording made at the same time, with your voice: it fills the frame "
+                             "and your face goes small in its corner (OpenShot only)")
     parser.add_argument("--open", action="store_true", help="open the result in the editor")
     parser.add_argument("--no-verify", action="store_true",
                         help="skip listening to each cut (faster, but a clipped word can slip through)")
@@ -276,14 +298,19 @@ def main() -> None:
 
     if args.vertical and args.editor != "openshot":
         parser.error("--vertical needs an OpenShot project for now")
+    if args.screen and (args.vertical or args.editor != "openshot"):
+        parser.error("--screen makes a 16:9 OpenShot project, so it goes without --vertical and Shotcut")
     video = Path(args.video)
-    if not video.exists():
-        sys.exit(f"no such file: {video}")
+    screen_recording = Path(args.screen) if args.screen else None
+    for path in (video, screen_recording):
+        if path and not path.exists():
+            sys.exit(f"no such file: {path}")
     out_dir = Path(args.out) if args.out else REPO_ROOT / "output" / video.stem
     editor = EDITORS[args.editor]
     # The build the agent is told to run must make the same editor's project.
     editor_flags = ([] if args.editor == DEFAULT else ["--editor", args.editor]) + \
-        (["--captions"] if args.captions else []) + (["--vertical"] if args.vertical else [])
+        (["--captions"] if args.captions else []) + (["--vertical"] if args.vertical else []) + \
+        (["--screen", f'"{screen_recording}"'] if screen_recording else [])
 
     try:
         if args.prepare:
@@ -304,11 +331,12 @@ def main() -> None:
             transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
             project = build(video, out_dir, load_plan(out_dir, transcript),
                             verify=not args.no_verify, editor=editor, captions=args.captions,
-                            vertical=args.vertical)
+                            vertical=args.vertical, screen_recording=screen_recording)
         else:
             project = first_cut(video, out_dir, args.brief, args.provider, args.model,
                                 args.base_url, args.language, verify=not args.no_verify,
-                                editor=editor, captions=args.captions, vertical=args.vertical)
+                                editor=editor, captions=args.captions, vertical=args.vertical,
+                                screen_recording=screen_recording)
     except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError,
             ProfileError, HyperFramesError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")

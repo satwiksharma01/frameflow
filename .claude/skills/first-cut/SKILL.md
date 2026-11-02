@@ -5,7 +5,7 @@ description: Make a first cut of a raw video recording with Frameflow, acting as
 
 # First cut, with you as the editor
 
-Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the OpenShot project). You make the editorial decisions. If the user asks for a Shotcut project, add `--editor shotcut` to both commands. If they ask for captions or subtitles, add `--captions` to both: what is said pops in word by word on a Captions track. If they ask for a reel, a Short, a TikTok or a vertical video, add `--vertical` to both: the recording fills a 9:16 frame, framed on their face, and they can move the crop in OpenShot. If they want several shorts or clips picked out of a long recording, use the `shorts` skill instead.
+Frameflow handles the mechanical work (frame-rate normalization, transcription, silence measurement, validation, building the OpenShot project). You make the editorial decisions. If the user asks for a Shotcut project, add `--editor shotcut` to both commands. If they ask for captions or subtitles, add `--captions` to both: what is said pops in word by word on a Captions track. If they ask for a reel, a Short, a TikTok or a vertical video, add `--vertical` to both: the recording fills a 9:16 frame, framed on their face, and they can move the crop in OpenShot. If they recorded their screen and their face as two files for a builder video, give the face recording as `<video>` and add `--screen "<screen recording>"` to both: the screen fills a 16:9 frame with their face small in its corner, lined up by the voice both files recorded. If they want several shorts or clips picked out of a long recording, use the `shorts` skill instead.
 
 1. **Prepare.** Run from the repository root:
 

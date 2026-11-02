@@ -214,6 +214,16 @@ the prompt workflow builds it as an editable project.
   Videos made from a prompt are not covered yet (see findings).
 - **Screen recordings for builder content:** a screen recording plus a face
   camera, laid out picture-in-picture as editable clips.
+  *Status:* built and checked (2026-11-02): `--screen` on a first cut puts the
+  screen recording on a Screen track under the face, which shrinks to the
+  bottom-right corner of a 16:9 frame. The two are lined up by the voice both
+  recorded, and an edit cuts the screen wherever it cuts the face. On a
+  made-up pair, the test recording and a screen recording carrying its voice
+  through another microphone, started 3.217 s earlier, it found 3.219 s.
+  Rendered through OpenShot's engine, the screen showed exactly the frame
+  expected and the face its own, before and after two edits, and a face moved
+  and resized by hand and a zoomed screen clip were kept. Not checked on a
+  real screen recording yet (see findings).
 - **Research for pitches:** the agent gathers facts with sources into the
   brief, which the creator confirms like any brief.
 

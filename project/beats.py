@@ -30,9 +30,9 @@ def tempo(times: list[float]) -> float:
     return 60 * (len(times) - 1) / (times[-1] - times[0])
 
 
-def _decode(path: Path | str) -> np.ndarray:
+def _decode(path: Path | str, rate: int = RATE) -> np.ndarray:
     result = subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-i", str(path), "-vn", "-ac", "1",
-                             "-ar", str(RATE), "-f", "f32le", "-"], capture_output=True, timeout=600)
+                             "-ar", str(rate), "-f", "f32le", "-"], capture_output=True, timeout=600)
     if result.returncode != 0:
         raise MediaError(f"could not read {Path(path).name}: {result.stderr.decode(errors='replace').strip()[-500:]}")
     return np.frombuffer(result.stdout, dtype=np.float32)

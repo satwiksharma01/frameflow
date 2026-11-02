@@ -46,7 +46,7 @@
         "id": { "type": "string", "minLength": 1 },
         "type": {
           "type": "string",
-          "enum": ["video", "broll", "graphics", "captions", "audio"]
+          "enum": ["video", "screen", "broll", "graphics", "captions", "audio"]
         },
         "clips": {
           "type": "array",
@@ -134,7 +134,11 @@
             "y": { "$ref": "#/$defs/offset" }
           }
         },
-        "scale": { "type": "number", "exclusiveMinimum": 0 },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "How big the picture is against its size fitted to the frame: 0.25 is a quarter as wide and as tall. Not used with fill yet."
+        },
         "rotation": { "type": "number" }
       }
     },

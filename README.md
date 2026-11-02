@@ -33,6 +33,8 @@ It removes an illustrative two-second pause from a ten-second source and writes 
 
 **Shorts from a long recording.** The editor picks the moments that stand on their own — each opening on a hook, starting and ending on a whole sentence — and each becomes its own vertical OpenShot project, framed on your face, with captions, built and checked like a first cut.
 
+**Builder videos.** Record your screen and your face at the same time, as two files with your voice in both, and a first cut lays them out together: your screen fills a 16:9 frame and your face sits small in its bottom-right corner. The two are lined up by your voice, however far apart you pressed record. Both are ordinary clips you can move, resize, zoom or delete in OpenShot; an edit that cuts your face cuts the screen the same way, and keeps what you changed.
+
 **A video from a prompt.** Describe the video you want — a reel, a YouTube video, a pitch, a product ad — and hand over whatever you have: a script, recordings, images, clips, music. It doesn't need your face on camera. The editor writes a brief for you to confirm, then a storyboard (the script, and what is seen, said and shown on screen in each scene) for you to confirm, then builds it: your footage and images on the main track, cutaways to your other images and clips while you talk, titles, captions, product cards and lower thirds rendered by HyperFrames (for a reel, what is said pops in word by word; a product card comes up as the product is named), a voiceover read on your computer by Piper's natural voice (trained on public-domain recordings, so you can post it), and your music under it, each on its own track. Cut to the music, every cut lands on its beat, except where that would clip a word you say. Give it a look — one of your own colour LUTs (`.cube`) or one of the 50 that come with OpenShot — and your footage, images and clips are graded with it, while titles, cards and captions keep their colours; on each clip it's an effect you can switch off in OpenShot. In Claude Code, just ask for the video; the `produce` skill runs the steps (`python -m project.produce`).
 
 **Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Ask for B-roll and your own images and clips cut away from the recording where what you say matches them, on their own B-roll track, filling the frame with their sound turned down while your voice carries on. Captions, graphics and B-roll move with the cut. The previous version is always kept.
@@ -90,7 +92,7 @@ Your agent then follows `output/<recording>/edit_request.md` and writes `edit_pl
 python -m project.first_cut "path/to/recording.mp4" --build --open
 ```
 
-Add `--editor shotcut` to both commands for a Shotcut project instead, `--captions` for captions that pop in word by word as you speak, and `--vertical` for a 9:16 video (OpenShot only, for now).
+Add `--editor shotcut` to both commands for a Shotcut project instead, `--captions` for captions that pop in word by word as you speak, and `--vertical` for a 9:16 video (OpenShot only, for now). For a builder video, give your face recording as the recording and add `--screen "path/to/screen.mp4"` to both commands: the screen recording you made at the same time, with your voice in it too (OpenShot only).
 
 ### Shorts from one long recording
 
@@ -200,7 +202,7 @@ Two rules come from things that went wrong on real recordings:
 |---|---|
 | `project/first_cut.py`, `project/shorts.py`, `project/edit.py`, `project/produce.py`, `project/publish.py` | The commands: cut a recording, cut shorts from it, change a project, make a video from a prompt, write what goes beside it on YouTube |
 | `project/hyperframes.py`, `project/captions.py`, `project/voiceover.py` | Titles and cards rendered by HyperFrames; word-by-word captions; the voiceover |
-| `project/reframe.py`, `project/broll.py`, `project/beats.py` | Framing on your face for vertical; cutaways to your own images and clips; the music's beat |
+| `project/reframe.py`, `project/broll.py`, `project/beats.py`, `project/screen.py` | Framing on your face for vertical; cutaways to your own images and clips; the music's beat; your screen recording under your face |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |
 | `project/cutpoints.py`, `project/verify_cuts.py` | Placing cuts in pauses, and listening to them afterwards |
 | `project/reconcile.py`, `project/operations.py` | Working out your hand edits; applying changes without undoing them |

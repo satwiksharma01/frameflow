@@ -90,12 +90,16 @@ def _levels(clip: dict, in_f: int, length_f: int, fps: float) -> dict:
 
 
 def _framing(clip: dict, reader: dict, width: int, height: int, fps: float) -> dict:
-    """A filled clip's scale mode and location curves. Keyframes count source frames from 1."""
+    """A clip's scale mode, size and location curves. Keyframes count source frames from 1."""
     transform = clip.get("transform") or {}
-    if not transform.get("fill"):
+    fill = bool(transform.get("fill"))
+    size = 1.0 if fill else transform.get("scale", 1.0)
+    if not fill and size == 1.0 and "position" not in transform:
         return {}
-    framing: dict = {"scale": SCALE_CROP}
-    for axis, unit in zip("xy", location_units(width, height, reader["width"], reader["height"])):
+    framing: dict = {"scale": SCALE_CROP} if fill else {}
+    if size != 1.0:
+        framing.update(scale_x=keyframe(size), scale_y=keyframe(size))
+    for axis, unit in zip("xy", location_units(width, height, reader["width"], reader["height"], fill)):
         offset = transform.get("position", {}).get(axis, 0.0)
         if isinstance(offset, list):
             framing[f"location_{axis}"] = {"Points": [

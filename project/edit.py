@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from project import broll
+from project import broll, screen
 from project.captions import follow_cut
 from project.change_agent import build_agent_request, build_context, propose_operations
 from project.editors import PARSE_ERRORS, editor_for
@@ -39,7 +39,7 @@ from project.engine_check import EngineCheckError
 from project.first_cut import TIMING_FILE, _step, _write_json
 from project.openshot_template import ProfileError
 from project.hyperframes import HyperFramesError, render_generated
-from project.media import MediaError
+from project.media import MediaError, analyze
 from project.operations import add_broll, add_graphics, apply, check, main_index, move_with_cut, resolve
 from project.providers import ProviderError, get_provider
 from project.reconcile import HumanChanges, reconcile, source_key
@@ -154,10 +154,13 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     if cutaways and editor.suffix != ".osp":
         problems.append("B-roll needs an OpenShot project for now: Shotcut projects cannot fill the frame "
                         "with a clip or turn its sound down yet")
-    followed = None
+    followed = shown = None
     if not problems:
         # Graphics and B-roll already there move with the cut before new ones are placed on it.
         followed = move_with_cut(project.ir, new_ir) if operations else None
+        screens = {c["source"] for t in new_ir["tracks"] if t["type"] == "screen" for c in t["clips"]}
+        if operations and screens:
+            shown = screen.follow(project.ir, new_ir, {source_key(s): analyze(s).duration_seconds for s in screens})
         problems += add_graphics(new_ir, graphics) + add_broll(new_ir, cutaways)
     if problems:
         raise EditError("the operations need fixing:\n" + "\n".join(f"  {p}" for p in problems))
@@ -210,6 +213,8 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
     if followed and any(followed.values()):
         print(f"    graphics and B-roll: {followed['moved']} moved with the cut, {followed['removed']} went "
               f"with their moment")
+    if shown is not None:
+        print(f"    screen recording: cut the same way, {shown} clip(s)")
     if synced:
         print(f"    captions: {synced['moved']} line(s) moved with the cut, {synced['removed']} went with "
               f"their words, {synced['added']} new for speech that had none")
@@ -217,9 +222,9 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
         print(f"    discarded, as asked (the previous version still has them): "
               f"{'; '.join(project.discarded)}")
     main = main_index(project.ir)
-    # Clips that were there before this change; captions, graphics and B-roll follow the cut.
+    # Clips that were there before this change; captions, graphics, B-roll and the screen follow the cut.
     others = sum(len(t["clips"]) for i, t in enumerate(project.ir["tracks"])
-                 if i != main and t["type"] not in ("captions", "graphics", "broll"))
+                 if i != main and t["type"] not in ("captions", "graphics", "broll", "screen"))
     if others and operations:
         print(f"    ! {others} clip(s) on other tracks kept their positions; check they still "
               f"line up with the main track")

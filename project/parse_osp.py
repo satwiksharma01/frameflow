@@ -108,25 +108,33 @@ def _offset(curve: dict, unit: float, fps: float) -> float | list[dict] | None:
 
 
 def _framing(clip: dict, width: int, height: int, fps: float) -> dict | None:
-    """The clip's fill and position as IR fields: nothing for a clip left as
-    OpenShot places it, None for framing the IR cannot hold yet."""
+    """The clip's fill, size and position as IR fields: nothing for a clip left
+    as OpenShot places it, None for framing the IR cannot hold yet."""
     default = CLIP_DEFAULTS["location_x"]
     location = (clip.get("location_x", default), clip.get("location_y", default))
+    sizes = (clip.get("scale_x", CLIP_DEFAULTS["scale_x"]), clip.get("scale_y", CLIP_DEFAULTS["scale_y"]))
     scale = clip.get("scale", SCALE_FIT)
-    if scale == SCALE_FIT and location == (default, default):
+    if scale == SCALE_FIT and location == (default, default) and sizes == (CLIP_DEFAULTS["scale_x"],) * 2:
         return {}
     reader = clip.get("reader") or {}
-    if (scale != SCALE_CROP or clip.get("location_coordinate_system", "auto") != "auto"
-            or not reader.get("width") or not reader.get("height")):
+    # One size for the whole clip, the same both ways: OpenShot's resize keeping the shape.
+    size = _curve(sizes[0], fps, clip)
+    if (scale not in (SCALE_CROP, SCALE_FIT) or clip.get("location_coordinate_system", "auto") != "auto"
+            or not reader.get("width") or not reader.get("height")
+            or size is None or size[1:] != (0, 0) or _curve(sizes[1], fps, clip) != size
+            or (scale == SCALE_CROP and size[0] != 1)):
         return None
+    fill = scale == SCALE_CROP
     position = {}
-    for axis, curve, unit in zip("xy", location, location_units(width, height, reader["width"], reader["height"])):
+    for axis, curve, unit in zip("xy", location, location_units(width, height, reader["width"], reader["height"], fill)):
         offset = _offset(curve, unit, fps)
         if offset is None:
             return None
         if offset != 0:
             position[axis] = offset
-    return {"transform": {"fill": True, **({"position": position} if position else {})}}
+    transform = {**({"fill": True} if fill else {}), **({"scale": round(size[0], _PRECISION)} if size[0] != 1 else {}),
+                 **({"position": position} if position else {})}
+    return {"transform": transform} if transform else {}
 
 
 # How OpenShot saves the path of a LUT it ships with.
@@ -240,10 +248,10 @@ def unsupported_content(path: Path | str) -> list[str]:
     """Everything in the project that parsing and recompiling would lose.
 
     An allowlist, as for Shotcut: a clip whose settings differ from what
-    OpenShot gives an untouched clip - zoomed, rotated, sped up, muted, moved
-    while fitting the frame, a hand-drawn opacity, volume or position curve -
-    or that carries an effect other than a LUT at a steady intensity would be
-    rewritten without it. Each item is a sentence a creator can act on.
+    OpenShot gives an untouched clip - stretched out of shape or resized over
+    time, rotated, sped up, muted, a hand-drawn opacity, volume or position
+    curve - or that carries an effect other than a LUT at a steady intensity
+    would be rewritten without it. Each item is a sentence a creator can act on.
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     fps = data["fps"]["num"] / data["fps"]["den"]
@@ -267,11 +275,11 @@ def unsupported_content(path: Path | str) -> list[str]:
                 if _lut(effect, Path(path).resolve().parent, fps, clip) is None:
                     found.append(f"the {effect.get('class_name') or effect.get('type') or 'unnamed'} "
                                  f"effect on {where}")
-            # Fades, steady levels and the framing of a filled clip carry over as IR
+            # Fades, steady levels and a clip's fill, size and position carry over as IR
             # fields; other curves do not.
             carried = {"effects"} | ({"alpha", "volume"} if _levels(clip, fps) is not None else set())
             if _framing(clip, int(data["width"]), int(data["height"]), fps) is not None:
-                carried |= {"scale", "location_x", "location_y"}
+                carried |= {"scale", "scale_x", "scale_y", "location_x", "location_y"}
             changed = [k for k, v in CLIP_DEFAULTS.items() if k not in carried and clip.get(k) != v]
             changed += [k for k in clip if k not in CLIP_DEFAULTS and k not in _PER_CLIP]
             if changed:

@@ -715,6 +715,60 @@ no punctuation (0 of 872 words on the test recording, though whisper's own text
 has it), so the request's phrases break every 20 words and a chapter's first
 line can start a word or two into its sentence.
 
+## A screen recording under the face
+
+`--screen` on a first cut is for builder videos: the creator records their
+screen and their face at the same time, as two files, each with their voice.
+The face recording stays the recording - it is transcribed and cut, and its
+sound is what plays - so everything else works on it as before. The screen
+recording goes on a Screen track under it, fitted to a 1920x1080 frame with
+its own sound at -60 dB, and the face shrinks to a quarter of its fitted size,
+48 px in from the bottom-right corner.
+
+- **Lined up by the voice.** The two files start wherever the creator pressed
+  record, so Frameflow measures how loud each is every 5 ms, less its average
+  over the second before, and finds the shift where the two rise and fall
+  together. On the made-up pair below, the best shift scored 4.1 times the
+  next best; on files that share no voice, 1.03 to 1.12. Under 1.5 it stops
+  and says to record the voice into both.
+- **Decoded sound starts at its first sample.** FFmpeg decodes a file's sound
+  from its first sample, which can sit after the start of its picture: 0.116 s
+  in the test recording, 0.094 s in the screen file. The shift between the
+  decoded sounds was 3.238 s; corrected for those starts it is 3.219 s, against
+  the 3.217 s built in.
+- **OpenShot moves a fitted clip by fractions of the frame.** A filled clip's
+  location in 4.0.1 is relative to the frame and its own size together; a
+  fitted clip's is a plain fraction of the frame, at any size: rendered at
+  0.25 to 3 times, a location of 0.1 moved it 192 px every time. So the IR can
+  size and place a picture without filling the frame (`transform.scale` and
+  `position`), and a face the creator moves or resizes in OpenShot, keeping its
+  shape, is read back instead of stopping the next edit.
+- **An edit cuts the screen with the face.** Each stretch of a screen clip is
+  matched, through the main track as it was, to the moments of the face above
+  it, and goes where those moments play now. A clip the creator deleted stays
+  gone, a zoom stays on its moments, and speech put back gets the screen
+  recorded with it where the screen plays beside it.
+- **The listening check finds the main track by its type.** It used to take
+  the bottom track, which is now the screen.
+
+Checked on a made-up pair (`output/pip-check/`): the 5.4-minute test recording
+as the face, and a test-pattern "screen" carrying its voice through a duller
+microphone with hiss, started 3.217 s earlier. The first cut found 3.219 s, and
+all 29 cuts sounded clean. Rendered through OpenShot's engine at five times,
+one just after a cut, the screen showed exactly the frame expected (a mean
+difference of 0.0 out of 255, against 1.6 to 11.5 a frame or half a second
+either side), and the face its own (0.6 to 1.0, against 2.2 to 10.3 half a
+second either side). An edit that took out 6.27 s cut the screen the same way.
+With the face then moved to the top-left and made bigger, and one screen clip
+zoomed 1.5 times, a second edit kept all of it, and the frames still matched.
+
+Not yet: a real screen recording through a real second microphone; drift
+between two devices' clocks (one fixed shift is used, fine over minutes,
+unchecked over an hour); a frame bigger than 1080p; screen recordings in shorts
+or videos made from a prompt. The test recording's face is a narrow portrait
+picture with black bars at its sides, and they show in the corner; cropping
+them needs OpenShot's Crop effect, which the IR cannot hold yet.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

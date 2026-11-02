@@ -5,7 +5,9 @@ Python is OpenShot's 3.8 with libopenshot loaded - so nothing newer than 3.8
 here, and nothing from Frameflow. The working directory must be the project's
 folder: libopenshot resolves the project's relative media paths against it.
 
-    openshot-qt-cli.exe <project.osp> <out.wav> [--main-track]     (with FRAMEFLOW_RUN=this file)
+    openshot-qt-cli.exe <project.osp> <out.wav> [--layer N]     (with FRAMEFLOW_RUN=this file)
+
+--layer N renders only the Nth layer from the bottom, counting from 0.
 """
 import json
 import math
@@ -14,13 +16,13 @@ import sys
 import openshot
 
 
-def main(project_path, out_path, main_track_only=False):
+def main(project_path, out_path, layer_index=None):
     with open(project_path, encoding="utf-8") as f:
         project = json.load(f)
-    if main_track_only:
+    if layer_index is not None:
         # The words checked at each join are the main track's; other tracks' sound would cover them.
-        bottom = min(layer["number"] for layer in project["layers"])
-        project["clips"] = [c for c in project["clips"] if c["layer"] == bottom]
+        number = sorted(layer["number"] for layer in project["layers"])[layer_index]
+        project["clips"] = [c for c in project["clips"] if c["layer"] == number]
     fps = openshot.Fraction(project["fps"]["num"], project["fps"]["den"])
     timeline = openshot.Timeline(project["width"], project["height"], fps,
                                  project["sample_rate"], project["channels"], project["channel_layout"])
@@ -40,4 +42,5 @@ def main(project_path, out_path, main_track_only=False):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], "--main-track" in sys.argv[3:])
+    options = sys.argv[3:]
+    main(sys.argv[1], sys.argv[2], int(options[options.index("--layer") + 1]) if "--layer" in options else None)

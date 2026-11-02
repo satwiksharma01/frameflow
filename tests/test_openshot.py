@@ -205,6 +205,13 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual([c["transform"] for c in parsed["tracks"][0]["clips"]],
                          [still["transform"], panned["transform"]])
 
+    def test_a_face_in_the_corner_round_trips(self):
+        """A recording made a quarter of its size and moved into the corner, as over a screen recording."""
+        face = _clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)
+        face["transform"] = {"scale": 0.25, "position": {"x": 0.35, "y": 0.330556}}
+        parsed = self.compile_and_parse(_ir([{"id": "V1", "type": "video", "clips": [face]}]))
+        self.assertEqual(parsed["tracks"][0]["clips"][0]["transform"], face["transform"])
+
     def test_a_look_round_trips(self):
         """Graded through a LUT at 80%, and switched off on the second clip: OpenShot's None."""
         graded = _clip("clip1", NORMALIZED_MEDIA, 0.0, 0.0, 2.0)
@@ -331,11 +338,23 @@ class TestUnsupportedContent(unittest.TestCase):
                                    + keyframe(1.0, x=400)["Points"]}
         self.assertEqual(self.found(), ["changed alpha on clip 2 on Track 1"])
 
-    def test_a_speed_change_and_a_move_are_named_together(self):
+    def test_a_speed_change_and_a_rotation_are_named_together(self):
         from project.openshot_template import keyframe
         self.track1[0]["time"] = {"Points": keyframe(1, x=1)["Points"] + keyframe(60, x=30)["Points"]}
-        self.track1[0]["location_x"] = keyframe(0.25)
-        self.assertEqual(self.found(), ["changed location x, time on clip 1 on Track 1"])
+        self.track1[0]["rotation"] = keyframe(15.0)
+        self.assertEqual(self.found(), ["changed rotation, time on clip 1 on Track 1"])
+
+    def test_a_picture_made_smaller_and_moved_by_hand_is_carried(self):
+        """A face resized and dragged in OpenShot, keeping its shape."""
+        from project.openshot_template import keyframe
+        self.track1[0].update(scale_x=keyframe(0.3), scale_y=keyframe(0.3), location_x=keyframe(0.5),
+                              location_y=keyframe(0.4))
+        self.assertEqual(self.found(), [])
+
+    def test_a_picture_stretched_out_of_shape_is_named(self):
+        from project.openshot_template import keyframe
+        self.track1[0].update(scale_x=keyframe(0.3), scale_y=keyframe(0.4))
+        self.assertEqual(self.found(), ["changed scale x, scale y on clip 1 on Track 1"])
 
     def test_a_crop_moved_by_hand_is_carried(self):
         """Filling the frame, then moving it at frame 90: OpenShot adds a linear point there."""
@@ -546,6 +565,33 @@ class TestFramingInTheEngine(unittest.TestCase):
                 lefts.append(next(x for x in range(image.width) if image.getpixel((x, 960)) > 128))
         # Centred, the bar's left edge is at the frame's middle; moved by 0.1, 108 px right.
         self.assertEqual(lefts, [540, 648])
+
+    def test_a_face_over_a_screen_recording_sits_48_pixels_in_from_the_corner(self):
+        """A white 1280x720 picture laid out as the face is, in a 1920x1080 frame."""
+        from project import openshot_build
+        from project.compile_osp import compile_file
+        from project.screen import face_transform
+        if not _have_profiles() or openshot_build.install_dir() is None:
+            self.skipTest("OpenShot is not installed")
+        from PIL import Image       # only for reading the engine's frame
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            face = root / "face.mp4"
+            subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                            "color=white:size=1280x720:rate=30:duration=1", "-pix_fmt", "yuv420p", str(face)],
+                           check=True)
+            (root / "frame.py").write_text(self.FRAME, encoding="utf-8")
+            clip = _clip("clip1", face, 0.0, 0.0, 1.0)
+            clip["transform"] = face_transform((1280, 720))
+            (root / "p.ir.json").write_text(json.dumps(_ir([{"id": "V1", "type": "video", "clips": [clip]}])),
+                                            encoding="utf-8")
+            osp = compile_file(root / "p.ir.json", root / "p.osp")
+            result = openshot_build.run_script(root / "frame.py", str(osp), str(root / "f.png"), "15", cwd=root)
+            self.assertEqual(result.returncode, 0, result.stderr[-1500:])
+            box = Image.open(root / "f.png").convert("L").point(lambda v: 255 if v > 128 else 0).getbbox()
+        # A quarter of the frame, 480x270, ending 48 px from its right and bottom edges.
+        for got, want in zip(box, (1392, 762, 1872, 1032)):
+            self.assertAlmostEqual(got, want, delta=1)
 
 
 class TestLookInTheEngine(unittest.TestCase):

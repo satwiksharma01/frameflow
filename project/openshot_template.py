@@ -120,14 +120,19 @@ SCALE_CROP, SCALE_FIT = 0, 1
 CURVES = {"smooth": 0, "linear": 1, "hold": 2}
 
 
-def location_units(width: int, height: int, source_width: int, source_height: int) -> tuple[float, float]:
-    """OpenShot's location values per fraction of the frame, for a clip that fills it.
+def location_units(width: int, height: int, source_width: int, source_height: int,
+                   fill: bool = True) -> tuple[float, float]:
+    """OpenShot's location values per fraction of the frame, for a clip that fills
+    it or fits inside it.
 
     In 4.0.1 a filled clip's location is relative to its own scaled size and the
     frame's together: 1 moves it exactly off screen, half the frame plus half
     the picture. So a move of a fraction f of the frame is f * 2 * frame /
-    (frame + picture) in OpenShot's units.
+    (frame + picture) in OpenShot's units. A fitted clip's location is a
+    fraction of the frame itself, at any size (rendered at 0.25 to 3 times).
     """
+    if not fill:
+        return 1.0, 1.0
     scale = max(width / source_width, height / source_height)
     return (2 * width / (width + source_width * scale), 2 * height / (height + source_height * scale))
 

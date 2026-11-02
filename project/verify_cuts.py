@@ -33,6 +33,7 @@ from project import openshot_build
 from project.engine_check import find_melt
 from project.media import _find_tool
 from project.parse_osp import parse_osp
+from project.reconcile import main_track
 from project.transcribe import TranscriptionError, find_model, find_whisper_cli, run_whisper
 
 # Seconds of rendered audio to listen to either side of a join.
@@ -143,12 +144,15 @@ def render_track_audio(clips: list[dict], out_wav: Path | str) -> Path:
 
 
 def render_osp_audio(osp_path: Path | str, out_wav: Path | str) -> Path:
+    ir = parse_osp(osp_path)
+    main = main_track(ir)
     if openshot_build.install_dir() is None:
-        return render_track_audio(parse_osp(osp_path)["tracks"][0]["clips"], out_wav)
+        return render_track_audio(main["clips"], out_wav)
     osp_path = Path(osp_path).resolve()
+    # parse_osp makes a track of each layer, bottom up.
     result = openshot_build.run_script(Path(__file__).parent / "openshot_render.py",
-                                       str(osp_path), str(Path(out_wav).resolve()), "--main-track",
-                                       cwd=osp_path.parent)
+                                       str(osp_path), str(Path(out_wav).resolve()),
+                                       "--layer", str(ir["tracks"].index(main)), cwd=osp_path.parent)
     if result.returncode != 0 or not Path(out_wav).exists():
         raise VerificationError(f"OpenShot could not render the project's audio: {result.stderr[-2000:]}")
     return Path(out_wav)
@@ -183,7 +187,7 @@ def verify_joins(ir: dict, timing: dict, project_path: Path | str,
     except TranscriptionError as e:
         # The project is already built; a missing tool means "not listened to", not "failed".
         raise VerificationError(str(e)) from e
-    clips = ir["tracks"][0]["clips"]
+    clips = main_track(ir)["clips"]
     words = timing["words"]
     checks: list[JoinCheck] = []
 
