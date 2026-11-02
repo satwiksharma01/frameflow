@@ -37,6 +37,21 @@
         "properties": { "name": { "type": "string", "minLength": 1 }, "why": { "type": "string", "minLength": 1 } }
       }
     },
+    "facts": {
+      "type": "array",
+      "description": "Facts about the world the video will state - numbers, dates, prices, who did what - each found at its source. Leave it out when the video states none.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "source", "url", "quote"],
+        "additionalProperties": false,
+        "properties": {
+          "claim": { "type": "string", "minLength": 1, "description": "The fact as the video will use it, no stronger than the quote." },
+          "source": { "type": "string", "minLength": 1, "description": "Who says it, as the narration would name them: \"Goldman Sachs\", \"YouTube\"." },
+          "url": { "type": "string", "pattern": "^https?://", "description": "The page the quote is on." },
+          "quote": { "type": "string", "minLength": 1, "description": "The words on that page that support the claim, at least four, copied exactly as the page has them." }
+        }
+      }
+    },
     "open_questions": {
       "type": "array",
       "description": "Anything essential the prompt left open. Ask the creator these before going on.",

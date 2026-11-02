@@ -769,6 +769,44 @@ or videos made from a prompt. The test recording's face is a narrow portrait
 picture with black bars at its sides, and they show in the corner; cropping
 them needs OpenShot's Crop effect, which the IR cannot hold yet.
 
+## Facts with sources for pitches
+
+A pitch states facts about the world - a market's size, what a platform pays,
+what a survey found - and a wrong number narrated with confidence is worse
+than none. So the agent researches them with its own web tools and puts each
+in the brief: the claim, who says it, the page, and the exact words on that
+page that support it. `python -m project.produce <folder> --brief` then opens
+every page with Python's own `urllib`, takes its text without scripts and
+styles, and looks for the quote word for word, whatever its case, spacing,
+punctuation and markup. `--storyboard` runs the same check, so a brief changed
+afterwards cannot skip it.
+
+- **A misquote or a missing page stops the brief.** A quote that is not on a
+  page Frameflow could read, or a page the site says is not there (404 or
+  410), goes back to the agent to fix.
+- **A page Frameflow cannot read is left to the creator.** A PDF, a site that
+  turns it away, or a page built by scripts that shows fewer than 150 words
+  without a browser is listed for the creator to open when they confirm.
+- **A quote is a whole phrase, at least four words**, so it cannot match by
+  chance.
+- **The narration names the source** where a number carries the point, as the
+  creator chose; links stay in the brief.
+
+Checked on a pitch for Frameflow (`output/frameflow-pitch/`): four facts
+researched at Goldman Sachs Research, YouTube's blog and Adobe's newsroom, and
+all four quotes found on their pages in 4.4 s. On the same pages, the $480
+billion misquoted as $500 billion was refused, the Adobe report's PDF was left
+for the creator, and an address made up on YouTube's blog was refused (404).
+No published survey of how long editing takes turned up, only creators' own
+posts, so that number stayed out, as the brief request says. The 59-second
+video built from the brief, rendered through OpenShot's engine and
+transcribed, names Goldman Sachs, YouTube and Adobe with their numbers as the
+brief has them.
+
+Not yet: reading PDFs, or pages that need a browser. And the check proves the
+words are on the page, not that the claim reads them fairly; that stays the
+creator's call when they confirm the brief.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

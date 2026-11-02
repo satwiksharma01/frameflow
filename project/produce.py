@@ -8,7 +8,9 @@ agent mode; each stage writes a request for it and checks what it writes back.
 
     python -m project.produce <folder> --prepare "<prompt>" [--script FILE]
            [--footage VIDEO ...] [--asset FILE ...] [--music FILE ...] [--look LUT ...]
-        -> brief_request.md; the agent writes brief.json, the creator confirms it
+        -> brief_request.md; the agent writes brief.json
+    python -m project.produce <folder> --brief
+        -> checks it, each fact's quote on its page (research.py); the creator confirms it
     python -m project.produce <folder> --storyboard
         -> storyboard_request.md; the agent writes storyboard.json, the creator confirms it
     python -m project.produce <folder> --build [--open]
@@ -28,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import beats, broll, captions, first_cut, hyperframes, openshot_build, reframe, voiceover
+from project import beats, broll, captions, first_cut, hyperframes, openshot_build, reframe, research, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
@@ -154,7 +156,9 @@ Work out what the creator wants and write it to `{(folder / BRIEF_FILE).as_posix
 - Pick the aspect from where it will be posted: 9:16 for Reels, Shorts and TikTok; 16:9 for YouTube and pitches; 1:1 for square feeds.
 - If something essential is missing - who it is for, the product's name, the call to action - put it in `open_questions` rather than guessing.
 - If the creator has a skill library, name the skills this video should use in `skills`, with why.
-- Then show the creator the brief in plain words, with any open questions, and wait for them to confirm before running:
+- For a pitch, or whenever the video will state facts about the world - numbers, dates, prices, who did what - research them with your web tools and put each in `facts`: the claim as the video will use it, who says it (`source`, as the narration would name them), the page (`url`), and the words on that page that support it (`quote`), at least four, copied exactly as the page has them rather than from a summary of it. Prefer the original - the report, the company's own page - over an article about it. State nothing from memory: a fact you cannot find stays out, or goes in `open_questions`. What the creator told you about their own product needs no source.
+- Then run `python -m project.produce "{folder.as_posix()}" --brief`. It checks the brief and opens every source to look for its quote; fix what it reports.
+- Then show the creator the brief in plain words, with any open questions, and each fact with its source and link, marking those Frameflow could not open for them to check. Wait for them to confirm before running:
 
   ```
   python -m project.produce "{folder.as_posix()}" --storyboard
@@ -166,6 +170,16 @@ Work out what the creator wants and write it to `{(folder / BRIEF_FILE).as_posix
 {_schema("brief")}
 ```
 """
+
+
+def check_brief(folder: Path) -> list[str]:
+    """Check brief.json, every fact's quote looked for on its page. A line for the creator on each fact;
+    ProduceError with what to fix."""
+    brief = _read(folder, BRIEF_FILE, "brief")
+    problems, lines = research.check(brief.get("facts", []))
+    if problems:
+        raise ProduceError(f"{folder / BRIEF_FILE} needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+    return lines
 
 
 # --- storyboard ----------------------------------------------------------------------
@@ -188,6 +202,7 @@ def storyboard_request(folder: Path) -> Path:
     if brief.get("open_questions"):
         raise ProduceError("the brief still has open questions; ask the creator, update brief.json "
                            "and remove them:\n" + "\n".join(f"  - {q}" for q in brief["open_questions"]))
+    check_brief(folder)         # again, in case the brief changed after it was checked
     parts = [f"""# Storyboard
 
 Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, matching the schema below.
@@ -237,12 +252,15 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
     look_note = ("- When the video has a mood to set - a fashion or lifestyle reel, a product ad - give it a `look`, "
                  "a colour grade on its footage, images and clips (titles, cards and captions keep their colours): "
                  + ", or ".join(choices) + ". Leave it out to keep the picture as shot.\n" if choices else "")
+    facts_note = ("- Facts about the world come only from the brief's `facts`, said no more strongly than their "
+                  "quotes. Where a number carries the point, the narration names its source as the brief does "
+                  "(\"Goldman Sachs expects ...\"); links stay in the brief.\n" if brief.get("facts") else "")
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
-- Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
+{facts_note}- Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
 {brand_note}{music_note}{look_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
@@ -572,6 +590,7 @@ def main() -> None:
     parser.add_argument("folder", help="where this video's files go, e.g. output/jacket-reel")
     stage = parser.add_mutually_exclusive_group(required=True)
     stage.add_argument("--prepare", metavar="PROMPT", help="start: the creator's prompt, in their words")
+    stage.add_argument("--brief", action="store_true", help="check brief.json, every fact against its source")
     stage.add_argument("--storyboard", action="store_true", help="after the brief is confirmed")
     stage.add_argument("--build", action="store_true", help="after the storyboard is confirmed")
     parser.add_argument("--script", type=Path, help="a script the creator wrote")
@@ -590,6 +609,11 @@ def main() -> None:
             if missing:
                 raise ProduceError("not found: " + ", ".join(map(str, missing)))
             print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look)}")
+        elif args.brief:
+            first_cut._step("Checking the brief, and each fact on its page")
+            for line in check_brief(folder):
+                print(f"    {line}")
+            print("\nNext: show the creator the brief, and wait for them to confirm it.")
         elif args.storyboard:
             print(f"\nNext: read {storyboard_request(folder)}")
         else:

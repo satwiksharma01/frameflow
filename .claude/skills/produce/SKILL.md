@@ -17,7 +17,7 @@ Frameflow does the mechanical work: transcribing recordings, reading the voiceov
 
    If it stops on a recording with "no usable speech", tell the user the measured numbers and stop.
 
-2. **Brief.** Read `brief_request.md` in full and write `brief.json`. Show the user the brief in plain words - what the video is, for whom, how long, which shape - with any open questions. **Wait for them to confirm.** Put their answers into `brief.json` and remove `open_questions`.
+2. **Brief.** Read `brief_request.md` in full and write `brief.json`. For a pitch, or any video that states facts about the world, research them with your web tools as the request says: each with who says it, its page, and the exact words on that page. Run `python -m project.produce output/<name> --brief` and fix what it reports. Show the user the brief in plain words - what the video is, for whom, how long, which shape - with any open questions, and each fact with its source and link, marking any Frameflow could not open for them to check. **Wait for them to confirm.** Put their answers into `brief.json` and remove `open_questions`.
 
 3. **Storyboard.** Run `python -m project.produce output/<name> --storyboard`, read `storyboard_request.md` in full and write `storyboard.json`. Footage spans start and end inside the measured pauses listed for each recording. Show the user the script, each scene in one line (what is seen, what is said, any caption, card or B-roll), whether what is said is shown as word-by-word captions (`spoken_captions`), whether the cuts land on the music's beat (`cut_to_beat`), and the look, if any (`look`: which LUT, and how strongly). **Wait for them to confirm**, and change it as they ask.
 

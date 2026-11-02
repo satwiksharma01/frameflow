@@ -226,6 +226,14 @@ the prompt workflow builds it as an editable project.
   real screen recording yet (see findings).
 - **Research for pitches:** the agent gathers facts with sources into the
   brief, which the creator confirms like any brief.
+  *Status:* built and checked (2026-11-02): the brief carries `facts`, each
+  with who says it, its page and the exact words on it. `--brief` opens every
+  page and looks for those words before the creator confirms, refusing a
+  misquote or a page that is not there, and leaving a PDF or a page it cannot
+  read for the creator to open. The narration names the source where a number
+  carries the point. Checked on a pitch for Frameflow: four facts from Goldman
+  Sachs, YouTube and Adobe found on their pages, a misquote and a made-up page
+  refused, and the 59-second video heard naming each source (see findings).
 
 ### 5. Checks on the picture, and a library of skills
 
