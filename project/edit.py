@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from project import broll, screen
+from project import broll, look, screen
 from project.captions import follow_cut
 from project.change_agent import build_agent_request, build_context, propose_operations
 from project.editors import PARSE_ERRORS, editor_for
@@ -246,6 +246,8 @@ def apply_change(project: Project, doc: dict, verify: bool = True) -> Path | Non
             print(f"    {len(checks) - len(suspect)} of {len(checks)} new joins sound clean")
             for c in suspect:
                 print(f"    ! {c.summary}")
+        if editor.suffix == ".osp":
+            look.report(project.path, new_ir)
     return project.path
 
 
@@ -278,7 +280,8 @@ def main() -> None:
     parser.add_argument("--discard-unsupported", action="store_true",
                         help="edit even though effects, fades or titles would be lost")
     parser.add_argument("--open", action="store_true", help="open the result in its editor")
-    parser.add_argument("--no-verify", action="store_true", help="skip listening to the new cuts")
+    parser.add_argument("--no-verify", action="store_true",
+                        help="skip listening to the new cuts and looking at the picture")
     args = parser.parse_args()
 
     path = Path(args.project).resolve()

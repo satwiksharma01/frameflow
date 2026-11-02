@@ -30,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import beats, broll, captions, first_cut, hyperframes, openshot_build, reframe, research, voiceover
+from project import beats, broll, captions, first_cut, hyperframes, look, openshot_build, reframe, research, voiceover
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
@@ -580,6 +580,7 @@ def build(folder: Path, open_it: bool = False) -> Path:
             print(f"    {tid}: {len(track['clips'])} clip(s)")
     if "look" in board:
         print(f"    look: {Path(board['look']['path']).name}, a Color Map effect on each picture clip")
+    look.report(project, ir)
     if open_it:
         editor.open(project)
     return project

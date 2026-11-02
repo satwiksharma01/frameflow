@@ -5,7 +5,7 @@ for the videos Frameflow is for: YouTube videos, pitches for ideas, and reels
 (fashion, lifestyle, products woven in).
 
 Written 2026-10-31, from OpenMontage's `main` branch on that day. "Where
-Frameflow stands" updated 2026-11-02.
+Frameflow stands" updated 2026-11-03.
 
 ## How this was worked out
 
@@ -76,7 +76,7 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music, with the cuts on its beat when asked |
 | Generated pictures and video | Many providers | None |
 | Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; a colour LUT per video on the picture; aspect and loudness per platform |
-| Checks on the picture | After every render | Done by hand while building features, not part of the pipeline |
+| Checks on the picture | After every render | After every build and edit: black frames, captions off screen and graphics over a face, in frames OpenShot's engine draws |
 | Publishing | An export bundle: the render and SEO metadata | A title, description, tags and chapters beside the project, checked against YouTube's limits; the chapters follow the cut; uploading stays the creator's |
 | Cost control | Yes | Nothing paid yet, so not needed yet |
 
@@ -241,6 +241,15 @@ the prompt workflow builds it as an editable project.
   engine and check for black frames, captions off screen, and graphics covering
   a face, the way the check by ear already listens to joins. *Done when:* a
   deliberately misplaced caption is reported.
+  *Status:* built and checked (2026-11-03): after a first cut, a short, an
+  edit or a produce build, OpenShot's engine draws frames and Frameflow
+  reports black frames (just after each cut, in each clip, and wherever the
+  main track is empty), captions running off the screen (each line in its last
+  frame), and titles, cards or lower thirds over a tenth of a face OpenCV
+  finds. On the captions-check cut, the two captions moved by hand were the two
+  of 172 reported, and the gap a deleted clip left was reported black; a
+  product card and a lower third over faces were reported, and two reels of
+  titles were clean (see findings).
 - **The creator's content skills as a library:** their skills, once shared,
   offered per video and picked in the brief, as agreed; never wired in.
 - **Generated pictures and video, optionally:** behind one interface, with a

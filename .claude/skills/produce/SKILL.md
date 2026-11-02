@@ -23,4 +23,4 @@ Frameflow does the mechanical work: transcribing recordings, reading the voiceov
 
 4. **Build.** Run `python -m project.produce output/<name> --build --open`. If it reports problems, fix `storyboard.json` and run it again until it succeeds.
 
-5. **Report.** Tell the user the length against the brief, what is on each track, and that it is an ordinary project: they can change it in OpenShot, or ask for changes in words (the edit skill).
+5. **Report.** Tell the user the length against the brief, what is on each track, anything the build flagged with `!` in the picture, and that it is an ordinary project: they can change it in OpenShot, or ask for changes in words (the edit skill).

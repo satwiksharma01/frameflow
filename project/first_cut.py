@@ -38,7 +38,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import screen
+from project import look, screen
 from project.captions import add as add_captions, runs_from_cut
 from project.editor_agent import (
     NoSpeechError,
@@ -241,6 +241,8 @@ def build(video: Path, out_dir: Path, plan: dict, verify: bool = True,
             print(f"    {len(checks) - len(suspect)} of {len(checks)} joins sound clean")
             for check in suspect:
                 print(f"    ! {check.summary}")
+    if verify and editor.suffix == ".osp":
+        look.report(project, ir)
 
     return project
 
@@ -293,7 +295,8 @@ def main() -> None:
                              "and your face goes small in its corner (OpenShot only)")
     parser.add_argument("--open", action="store_true", help="open the result in the editor")
     parser.add_argument("--no-verify", action="store_true",
-                        help="skip listening to each cut (faster, but a clipped word can slip through)")
+                        help="skip listening to each cut and looking at the picture (faster, but a clipped word "
+                             "or a black frame can slip through)")
     args = parser.parse_args()
 
     if args.vertical and args.editor != "openshot":

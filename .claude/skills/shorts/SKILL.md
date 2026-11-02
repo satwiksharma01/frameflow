@@ -25,4 +25,4 @@ Frameflow handles the mechanical work (transcription, measuring pauses, placing 
 
    If it reports problems with the plan, fix `shorts_plan.json` and run it again until it succeeds.
 
-4. **Report.** For each short: its title, its length, its opening line, and the project's path. Say which hook is weakest, and anything the build flagged: a cut with no pause near it, or a join that doesn't sound clean.
+4. **Report.** For each short: its title, its length, its opening line, and the project's path. Say which hook is weakest, and anything the build flagged: a cut with no pause near it, a join that doesn't sound clean, or something wrong in the picture.

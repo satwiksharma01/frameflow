@@ -807,6 +807,39 @@ Not yet: reading PDFs, or pages that need a browser. And the check proves the
 words are on the page, not that the claim reads them fairly; that stays the
 creator's call when they confirm the brief.
 
+## Looking at the picture
+
+After a build or an edit, `project/look.py` has OpenShot's own engine draw
+chosen frames (`project/openshot_frames.py`, about 0.26 s a frame) and looks at
+them for three things, the way the check by ear listens to every join:
+
+- **Black frames**, in the picture without its captions: just after every cut
+  on the main track, in the middle of every clip, and wherever the main track
+  is empty. A frame 99.5% black is black; a title on black is not. Captions are
+  left out because their text alone kept a gap under one from counting as
+  black.
+- **Captions off screen**: each line drawn alone, in its last frame. In its
+  middle only the words said so far are up, laid out where the whole line will
+  be: a line dragged right by 45% of the frame was still on screen there, and
+  reached the edge by its end.
+- **Graphics over a face**: each title, card or lower third drawn alone, in its
+  middle, against the faces OpenCV's frontal-face detector finds in the picture
+  under it. A graphic over a tenth of a face covers it: a lower third over the
+  speaker's mouth and chin was 18%, which a fifth let pass.
+
+Checked on real projects, read-only or on copies. The captions-check first cut
+(4:28, 172 captions; its copy is `output/look-check/`) looked clean: 233
+frames in 75 s. With one caption dragged right by 45% of the frame and another
+dragged up out of it, exactly those two were reported, one running off the
+right edge and one showing nothing; with a main-track clip deleted, the gap it
+left was reported black under its captions. The product card on the cards reel
+was reported covering 23% of a face, and the lower third on the first short
+18%; two reels of titles over footage reported nothing.
+
+Not yet: a face turned from the camera is not found, the detector being
+frontal; black frames are looked for where the cuts and clips are, not in every
+frame; and only OpenShot projects are looked at.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

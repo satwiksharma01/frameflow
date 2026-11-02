@@ -25,4 +25,4 @@ Frameflow handles the mechanical work (frame-rate normalization, transcription, 
 
    If it reports problems with the plan, fix `edit_plan.json` and run the build again until it succeeds.
 
-4. **Report.** Tell the user the kept duration against the original, and list each removed span with its reason, so they know what to review in OpenShot. Lead with the decisions you marked `"confidence": "low"` - those are what they should check first, and the build prints them back for the same reason.
+4. **Report.** Tell the user the kept duration against the original, and list each removed span with its reason, so they know what to review in OpenShot. Lead with the decisions you marked `"confidence": "low"` - those are what they should check first, and the build prints them back for the same reason - and anything the build flagged with `!`: a join that doesn't sound clean, a black frame, a caption off the screen or a graphic over a face.

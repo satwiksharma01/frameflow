@@ -44,6 +44,7 @@ It removes an illustrative two-second pause from a ten-second source and writes 
 **What it will not do quietly:**
 - **Cut mid-word without saying so.** Every cut point is moved into a measured pause. If the only pause is too short for a clean cut at your frame rate, a first cut warns you at build time, and a change refuses it so the editor picks a better boundary.
 - **Ship a cut without listening to it.** After building, the project's audio is rendered and every join is transcribed again, to check the words either side survived. An OpenShot project is rendered by OpenShot's own engine, run without a window (FFmpeg stands in when OpenShot is not installed); a Shotcut project is rendered by Shotcut's own engine.
+- **Ship a picture without looking at it.** After building, OpenShot's own engine draws frames and Frameflow looks at them: just after every cut and in every clip for black frames, every caption line in its last frame for running off the screen, and every title, card or lower third against the faces under it. Each problem is reported with its time. A first cut, a short or a change skips both checks with `--no-verify`.
 - **Add graphics that stay editable.** Ask for a title, caption, lower third or product card and it is rendered by HyperFrames with a transparent background onto its own Graphics track, anchored to the moment it's said. A product card shows the product's name, a line under it and its price as a tag; a lower third shows a name with a role under it. Both sit at the left just above the captions, in your brand kit. In your editor it's an ordinary clip you can move, trim or delete.
 - **Change what's on screen.** When the project is open in Frameflow's build of OpenShot, a change appears in the window as you watch, and one Ctrl+Z there undoes it. Unsaved work in that window is saved before Frameflow reads the project. See [docs/findings.md](docs/findings.md) for how the integration works.
 - **Throw away your work.** If a change would lose something Frameflow can't carry — an effect, a fade, a speed change, a title — it stops and names it instead of discarding it.
@@ -204,11 +205,11 @@ Two rules come from things that went wrong on real recordings:
 | `project/hyperframes.py`, `project/captions.py`, `project/voiceover.py` | Titles and cards rendered by HyperFrames; word-by-word captions; the voiceover |
 | `project/reframe.py`, `project/broll.py`, `project/beats.py`, `project/screen.py` | Framing on your face for vertical; cutaways to your own images and clips; the music's beat; your screen recording under your face |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |
-| `project/cutpoints.py`, `project/verify_cuts.py`, `project/research.py` | Placing cuts in pauses, and listening to them afterwards; finding a pitch's quotes on their sources |
+| `project/cutpoints.py`, `project/verify_cuts.py`, `project/look.py`, `project/research.py` | Placing cuts in pauses, then listening to them and looking at the picture; finding a pitch's quotes on their sources |
 | `project/reconcile.py`, `project/operations.py` | Working out your hand edits; applying changes without undoing them |
 | `project/editors.py` | Which editor a project belongs to, and what differs between them |
 | `project/compile_osp.py`, `project/parse_osp.py`, `project/openshot_template.py` | Writing and reading OpenShot projects |
-| `project/openshot_build.py`, `project/openshot_patch/`, `project/openshot_live.py`, `project/openshot_render.py` | Frameflow's build of OpenShot: its patch, the client that drives its window, and the engine render |
+| `project/openshot_build.py`, `project/openshot_patch/`, `project/openshot_live.py`, `project/openshot_render.py`, `project/openshot_frames.py` | Frameflow's build of OpenShot: its patch, the client that drives its window, and the engine's renders of sound and frames |
 | `project/compile_mlt.py`, `project/parse_mlt.py` | Writing and reading Shotcut projects |
 | `project/schema/` | JSON Schemas for the project model, edit plans, operations, briefs and storyboards |
 | `project/providers/` | Anthropic and OpenAI-compatible model providers |
