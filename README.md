@@ -37,6 +37,8 @@ It removes an illustrative two-second pause from a ten-second source and writes 
 
 **Changes.** Ask for a change to a project you already have, including one you've edited by hand in OpenShot. Frameflow works out what you changed since it last wrote the project, and won't undo your edits unless you ask it to. Ask for B-roll and your own images and clips cut away from the recording where what you say matches them, on their own B-roll track, filling the frame with their sound turned down while your voice carries on. Captions, graphics and B-roll move with the cut. The previous version is always kept.
 
+**Publishing.** For a finished video, the editor writes a title, a description, tags and chapters from what you say in it. They're checked against YouTube's limits and written beside the project, ready to paste into YouTube Studio. Each chapter starts at a moment of your recording, so after any change, write it again and the chapter times follow the cut. Uploading stays yours.
+
 **What it will not do quietly:**
 - **Cut mid-word without saying so.** Every cut point is moved into a measured pause. If the only pause is too short for a clean cut at your frame rate, a first cut warns you at build time, and a change refuses it so the editor picks a better boundary.
 - **Ship a cut without listening to it.** After building, the project's audio is rendered and every join is transcribed again, to check the words either side survived. An OpenShot project is rendered by OpenShot's own engine, run without a window (FFmpeg stands in when OpenShot is not installed); a Shotcut project is rendered by Shotcut's own engine.
@@ -151,6 +153,22 @@ Or in one step with an API key: `python -m project.edit "<project.osp>" "<what t
 
 Changes remove and restore spans of the recording, and add graphics and B-roll at moments of it. Reordering clips is not supported yet.
 
+## Publishing to YouTube
+
+Ask Claude Code for a title, description or chapters for a finished video, and the `publish` skill writes them. By hand:
+
+```bash
+python -m project.publish "output/recording/recording.osp" --prepare
+```
+
+Your agent follows `publish_request.md` and writes `publish.json`: a title, a description, tags, and the moment of the recording each chapter starts at. Then:
+
+```bash
+python -m project.publish "output/recording/recording.osp" --write
+```
+
+It checks the package against YouTube's limits and writes `publish.txt`, each part ready to paste into YouTube Studio, with the chapter times worked out from the project as it is now. Run `--write` again after any change and the chapters follow the cut. A short gets a title, description and tags, without chapters. Videos made from a prompt aren't covered yet.
+
 ## What gets written
 
 Everything for a recording goes in `output/<recording name>/`:
@@ -162,6 +180,7 @@ Everything for a recording goes in `output/<recording name>/`:
 | `transcript.json`, `timing.json` | What was said, and the measured pauses |
 | `edit_plan.json` | Every first-cut decision, with its reason |
 | `shorts_plan.json`, `short-1/`, ... | The moments picked for shorts, and each short's project |
+| `publish.json`, `publish.txt` | A finished video's title, description, tags and chapters, and the text to paste into YouTube Studio |
 | `history/` | Every previous version of the project, kept before each change |
 
 A recording with a variable frame rate — what most screen recorders and phone cameras produce — is first converted to a constant rate in the same folder, because cut points drift on variable-rate video.
@@ -179,7 +198,7 @@ Two rules come from things that went wrong on real recordings:
 
 | | |
 |---|---|
-| `project/first_cut.py`, `project/shorts.py`, `project/edit.py`, `project/produce.py` | The commands: cut a recording, cut shorts from it, change a project, make a video from a prompt |
+| `project/first_cut.py`, `project/shorts.py`, `project/edit.py`, `project/produce.py`, `project/publish.py` | The commands: cut a recording, cut shorts from it, change a project, make a video from a prompt, write what goes beside it on YouTube |
 | `project/hyperframes.py`, `project/captions.py`, `project/voiceover.py` | Titles and cards rendered by HyperFrames; word-by-word captions; the voiceover |
 | `project/reframe.py`, `project/broll.py`, `project/beats.py` | Framing on your face for vertical; cutaways to your own images and clips; the music's beat |
 | `project/editor_agent.py`, `project/change_agent.py` | What the editor is shown, and asked to do |

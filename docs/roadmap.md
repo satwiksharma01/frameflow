@@ -5,7 +5,7 @@ for the videos Frameflow is for: YouTube videos, pitches for ideas, and reels
 (fashion, lifestyle, products woven in).
 
 Written 2026-10-31, from OpenMontage's `main` branch on that day. "Where
-Frameflow stands" updated 2026-11-01.
+Frameflow stands" updated 2026-11-02.
 
 ## How this was worked out
 
@@ -70,13 +70,14 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Video from a prompt | 12 pipelines, research, generated images and video | Brief, storyboard, build: the creator's footage, images and music, HyperFrames titles, Piper's voice |
 | Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track; product cards and lower thirds that come up when their words are said |
 | Reframing to vertical | Face tracking, the crop baked into a new file | Face following as a crop and position on the clip, which the creator can nudge in OpenShot and later edits keep |
-| Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; no metadata yet |
+| Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; a title, description and tags from `publish` |
 | Reference video | Yes | Planned: the creator's rebuild of Hypit |
 | B-roll and stock | 16 stock sources, CLIP search | The creator's own images and clips on a B-roll track, anchored to what is said and moved by later edits; no stock |
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music, with the cuts on its beat when asked |
 | Generated pictures and video | Many providers | None |
 | Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; a colour LUT per video on the picture; aspect and loudness per platform |
 | Checks on the picture | After every render | Done by hand while building features, not part of the pipeline |
+| Publishing | An export bundle: the render and SEO metadata | A title, description, tags and chapters beside the project, checked against YouTube's limits; the chapters follow the cut; uploading stays the creator's |
 | Cost control | Yes | Nothing paid yet, so not needed yet |
 
 **Where Frameflow wins: the project stays the creator's.** OpenMontage's answer
@@ -203,6 +204,14 @@ the prompt workflow builds it as an editable project.
 - **Chapters and a publish package:** title, description, tags and chapter
   times from the transcript, written beside the project (OpenMontage's export
   bundle). Uploading stays the creator's.
+  *Status:* built and checked (2026-11-02): `python -m project.publish` and
+  the `publish` skill write `publish.txt` beside the project, each part ready
+  to paste into YouTube Studio and checked against YouTube's limits. A chapter
+  starts at a moment of the recording, so writing it again after an edit moves
+  it with the cut. On the test recording's first cut, rendered through
+  OpenShot's engine, each of seven chapters opened on its words; after an edit
+  took out 6.27 s before the third, the five after it moved up and still did.
+  Videos made from a prompt are not covered yet (see findings).
 - **Screen recordings for builder content:** a screen recording plus a face
   camera, laid out picture-in-picture as editable clips.
 - **Research for pitches:** the agent gathers facts with sources into the

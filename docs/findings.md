@@ -674,6 +674,47 @@ Not yet: an API mode (today the coding agent is the editor), stock footage and
 AI-generated pictures, and muting rather than -60 dB (a volume of 0 is not
 read back yet).
 
+## A publish package for YouTube
+
+`python -m project.publish` writes what goes beside a finished video when it is
+posted: a title, a description, tags and chapters, in `publish.txt` beside the
+project, each part ready to paste into YouTube Studio. The agent writes the
+words from what is said in the cut (the `publish` skill); Frameflow works out
+the times and checks YouTube's limits. Uploading stays the creator's.
+
+- **A chapter starts at a moment of the recording, like a graphic.** `--write`
+  reads the project as it is now and puts each chapter where its moment plays,
+  so after an edit, by hand or by Frameflow, writing it again moves the
+  chapters with the cut. A chapter whose moment was cut out is named, for the
+  agent or the creator to move.
+- **Times round down to the whole second** YouTube uses, so a chapter never
+  starts after its first word; at worst it starts a word early.
+- **The limits are YouTube's own.** Its help page on chapters
+  (support.google.com/youtube/answer/9884579): the first at 0:00, at least
+  three in ascending order, each at least 10 s. The Data API's videos
+  resource: a title of at most 100 characters and a description of at most
+  5,000 bytes, neither with < or >; tags at most 500 characters in all, where
+  the commas count and so do the quotation marks round a tag with a space. The
+  description is checked with its chapter list added.
+- **A short gets no chapters**, only its title, description and tags.
+
+Checked on a copy of the 4:24 first cut of the test recording
+(`output/publish-check/`). The agent picked seven chapters from the request.
+Rendered through OpenShot's engine and transcribed 4 s from each chapter time,
+every one opened on its part's first words or the word before them ("0:31 Why
+editing takes so long" heard "I have to explain you the main problem"). Then
+`edit` took out 6.27 s between the second chapter and the third. Written again,
+chapters 3 to 7 moved up 6 or 7 s each and the first two stayed; heard again,
+each still opened on its words. The first of the shorts got a package without
+chapters the same way.
+
+Not yet: API mode, so the agent writes the package; `edit` does not write
+`publish.txt` again itself; videos made from a prompt, whose main track has no
+recording to anchor chapters to; and the word timings of a real recording carry
+no punctuation (0 of 872 words on the test recording, though whisper's own text
+has it), so the request's phrases break every 20 words and a chapter's first
+line can start a word or two into its sentence.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

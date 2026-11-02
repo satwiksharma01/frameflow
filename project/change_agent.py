@@ -76,24 +76,29 @@ def _in_cut(start: float, end: float, kept: list[tuple[float, float]]) -> float:
     return sum(max(0.0, min(end, b) - max(start, a)) for a, b in kept)
 
 
-def phrase_lines(words: list[dict], kept: list[tuple[float, float]]) -> list[str]:
-    """What was said, as phrases marked in the cut (+), out of it (-), or partly (~).
-
-    Phrases end at sentence punctuation. Their times are Whisper's and only
-    approximate, which is why a phrase can be marked ~ - a cut boundary lies
-    somewhere inside it, as far as those times can tell.
-    """
-    phrases, current = [], []
+def phrases(words: list[dict]) -> list[list[dict]]:
+    """Words in recording order, grouped into phrases that end at sentence punctuation
+    or after PHRASE_MAX_WORDS words."""
+    groups, current = [], []
     for word in sorted(words, key=lambda w: w["start"]):
         current.append(word)
         if word["text"].rstrip().endswith((".", "?", "!")) or len(current) >= PHRASE_MAX_WORDS:
-            phrases.append(current)
+            groups.append(current)
             current = []
     if current:
-        phrases.append(current)
+        groups.append(current)
+    return groups
 
+
+def phrase_lines(words: list[dict], kept: list[tuple[float, float]]) -> list[str]:
+    """What was said, as phrases marked in the cut (+), out of it (-), or partly (~).
+
+    Their times are Whisper's and only approximate, which is why a phrase can be
+    marked ~ - a cut boundary lies somewhere inside it, as far as those times
+    can tell.
+    """
     lines = []
-    for phrase in phrases:
+    for phrase in phrases(words):
         start, end = phrase[0]["start"], phrase[-1]["end"]
         share = _in_cut(start, end, kept) / (end - start) if end > start else 0.0
         mark = "+" if share > 0.9 else "-" if share < 0.1 else "~"

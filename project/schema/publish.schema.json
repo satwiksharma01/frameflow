@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/publish.schema.json",
+  "title": "FrameflowPublishPackage",
+  "description": "What goes beside a finished video when it is posted on YouTube. Each chapter after the first starts at a moment of the recording, so its time follows the cut when the project changes. YouTube's limits on lengths are checked in publish.py.",
+  "type": "object",
+  "required": ["title", "description", "tags"],
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1, "description": "For viewers, without times: the chapter list is added after it." },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "chapters": {
+      "type": "array",
+      "description": "Optional: none for a Short or a video without distinct parts. The first starts the video and takes only a title.",
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "required": ["title"],
+          "additionalProperties": false,
+          "properties": { "title": { "type": "string", "minLength": 1 } }
+        }
+      ],
+      "items": {
+        "type": "object",
+        "required": ["title", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "at": { "type": "number", "minimum": 0, "description": "Seconds into the recording where the chapter starts: where its first phrase starts." }
+        }
+      }
+    }
+  }
+}
