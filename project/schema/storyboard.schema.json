@@ -62,7 +62,8 @@
             { "$ref": "#/$defs/footage" },
             { "$ref": "#/$defs/asset" },
             { "$ref": "#/$defs/title" },
-            { "$ref": "#/$defs/composition" }
+            { "$ref": "#/$defs/composition" },
+            { "$ref": "#/$defs/generated" }
           ]
         },
         "narration": {
@@ -173,6 +174,17 @@
       "properties": {
         "type": { "const": "composition" },
         "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "generated": {
+      "type": "object",
+      "required": ["type", "kind", "prompt"],
+      "additionalProperties": false,
+      "description": "A picture or a short clip made from a description, when nothing the creator provided shows it. A picture fills the frame with a slow push in; a clip plays from its start. With a paid generator it costs money: the build shows what, and stops above the video's cap.",
+      "properties": {
+        "type": { "const": "generated" },
+        "kind": { "enum": ["picture", "clip"] },
+        "prompt": { "type": "string", "minLength": 1, "description": "What it shows, in detail: the subject, the setting, the light, the camera." }
       }
     }
   }

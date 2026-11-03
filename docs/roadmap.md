@@ -5,7 +5,7 @@ for the videos Frameflow is for: YouTube videos, pitches for ideas, and reels
 (fashion, lifestyle, products woven in).
 
 Written 2026-10-31, from OpenMontage's `main` branch on that day. "Where
-Frameflow stands" updated 2026-11-03.
+Frameflow stands" updated 2026-11-04.
 
 ## How this was worked out
 
@@ -74,11 +74,11 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Reference video | Yes | Planned: the creator's rebuild of Hypit |
 | B-roll and stock | 16 stock sources, CLIP search | The creator's own images and clips on a B-roll track, anchored to what is said and moved by later edits; no stock |
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music, with the cuts on its beat when asked |
-| Generated pictures and video | Many providers | None |
+| Generated pictures and video | Many providers | Google's Gemini behind one interface, with the creator's key; a free stand-in for trying it |
 | Look and feel | Style playbooks (type, colour, motion, audio) and platform profiles | A brand kit (font, colours, logo, caption style) on every title, card and caption; a colour LUT per video on the picture; aspect and loudness per platform |
 | Checks on the picture | After every render | After every build and edit: black frames, captions off screen and graphics over a face, in frames OpenShot's engine draws |
 | Publishing | An export bundle: the render and SEO metadata | A title, description, tags and chapters beside the project, checked against YouTube's limits; the chapters follow the cut; uploading stays the creator's |
-| Cost control | Yes | Nothing paid yet, so not needed yet |
+| Cost control | Yes | An estimate before anything paid runs, and a cap per build that is $0 unless the creator raises it |
 
 **Where Frameflow wins: the project stays the creator's.** OpenMontage's answer
 to "change this" is to render again. Frameflow's answer is a timeline the
@@ -255,6 +255,16 @@ the prompt workflow builds it as an editable project.
 - **Generated pictures and video, optionally:** behind one interface, with a
   cost estimate and a cap before anything paid runs (OpenMontage's budget
   rules), and the result landing as an ordinary clip.
+  *Status:* built and checked with a free stand-in (2026-11-04): a storyboard
+  scene can be a `generated` picture or clip described in words. Before the
+  build makes any, it adds up what the new ones cost and stops above the
+  video's cap, which is $0 unless the creator raises it with `--budget`; each
+  is made once, then lands as an ordinary asset clip. Google's Gemini (Nano
+  Banana 2.1 pictures, Gemini Omni Flash clips) runs once the creator sets
+  `GEMINI_API_KEY`: it is paid only, and not called yet. A teaser built with
+  the stand-in placed both on the main track, built again without making them
+  twice, and with Gemini chosen stopped at $1.06 over the $0 cap before any call
+  (see findings).
 
 ### Later, outside this repository
 

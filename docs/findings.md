@@ -840,6 +840,44 @@ Not yet: a face turned from the camera is not found, the detector being
 frontal; black frames are looked for where the cuts and clips are, not in every
 frame; and only OpenShot projects are looked at.
 
+## Generated pictures and clips
+
+A storyboard scene can show what none of the creator's files does: a
+`generated` picture or clip, described in words. `project/generate.py` makes
+it, behind one interface, and hands it back as an ordinary asset, so a picture
+gets the slow push in every image gets and a clip plays as made, both on the
+main track.
+
+- **Nothing paid runs without the creator's say.** Before any is made, the
+  build adds up what the new ones will cost and stops if that is more than the
+  video's cap: $0 unless the creator raises it with `--budget`. The refusal
+  lists each scene's estimate and the total. Each is made once and kept under a
+  name for what it shows and what made it, so building again costs nothing.
+- **Gemini is paid only.** On Google's pricing page (2026-11-03) every picture
+  and video model is "Not available" on the API's free tier, and a Google AI
+  Plus subscription adds no API credits: its free pictures and Flow video work
+  only in Google's own apps. With `GEMINI_API_KEY` set, pictures come from Nano
+  Banana 2.1 at 2K ($0.0504 each) and clips from Gemini Omni Flash at 720p
+  (about $0.10 a second; Omni Flash picks the length, so the estimate assumes
+  10 s, $1.01). Veo was shut down on 22 October 2026 and Imagen before it.
+- **Through the Interactions API, with Python's own urllib**: a POST to
+  `/v1beta/interactions` with the model, the description and a
+  `response_format` of the video's shape, the result coming back as base64 in
+  the response's steps, as Google's docs show. A clip asks for one continuous
+  shot with no dialogue, because Omni Flash otherwise cuts between shots and
+  writes speech over the voiceover.
+- **A free stand-in** (`FRAMEFLOW_GENERATOR=stand-in`) draws FFmpeg's moving
+  test pattern, in a hue set by the description, for trying a storyboard.
+
+Checked with the stand-in on a 9:16 teaser made from a prompt
+(`output/generate-check/`): a generated picture under narration and a
+generated clip landed on the main track with the title over them, and the
+build looked at the picture and found nothing wrong. Built again, nothing was
+made twice. With Gemini chosen and the cap left at $0, the build stopped before
+any call: "would cost about $1.06, over this video's cap of $0.00", each scene
+listed. Gemini's requests were checked against a local server that answers as
+the Interactions API does, not against Google: no key, and no money.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

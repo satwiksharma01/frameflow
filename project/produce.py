@@ -30,7 +30,8 @@ import json
 import sys
 from pathlib import Path
 
-from project import beats, broll, captions, first_cut, hyperframes, look, openshot_build, reframe, research, voiceover
+from project import (beats, broll, captions, first_cut, generate, hyperframes, look, openshot_build, reframe, research,
+                     voiceover)
 from project.cutpoints import frame_align
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
@@ -252,6 +253,14 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
     look_note = ("- When the video has a mood to set - a fashion or lifestyle reel, a product ad - give it a `look`, "
                  "a colour grade on its footage, images and clips (titles, cards and captions keep their colours): "
                  + ", or ".join(choices) + ". Leave it out to keep the picture as shot.\n" if choices else "")
+    maker = generate.generator()
+    generated_note = (f"- When nothing the creator provided shows what a scene needs, a `generated` visual makes a picture "
+                      f"or a short clip from a description, with {maker.name}: about ${maker.prices['picture']:.2f} a "
+                      f"picture and ${maker.prices['clip']:.2f} a clip. The build stops if the new ones would cost more "
+                      f"than the video's cap, $0 unless the creator raises it with `--budget`; tell them what they would "
+                      f"cost when you show the storyboard.\n" if maker else
+                      "- Pictures and clips cannot be generated: no generator is set up, so leave `generated` visuals "
+                      "out.\n")
     facts_note = ("- Facts about the world come only from the brief's `facts`, said no more strongly than their "
                   "quotes. Where a number carries the point, the narration names its source as the brief does "
                   "(\"Goldman Sachs expects ...\"); links stay in the brief.\n" if brief.get("facts") else "")
@@ -261,7 +270,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 - Keep the total near the brief's {brief['target_seconds']}s.
 - Narration is read by a voice on this machine: {', '.join(voices) or 'none installed'}. Write it to be heard: short sentences, no symbols.
 {facts_note}- Use the creator's own footage and assets wherever they fit; a `title` scene or a HyperFrames `composition` covers what they did not provide.
-{brand_note}{music_note}{look_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
+{generated_note}{brand_note}{music_note}{look_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
@@ -323,7 +332,8 @@ def check_storyboard(board: dict, inputs: dict) -> list[str]:
                 problems.append(f"{label}: B-roll {b['path']!r} is not one of the creator's assets")
         if "broll" in scene and visual["type"] != "footage":
             problems.append(f"{label}: B-roll goes over footage; make the asset a scene of its own instead")
-        if visual["type"] in ("title", "composition") or (visual["type"] == "asset" and a and a["kind"] == "image"):
+        if (visual["type"] in ("title", "composition") or (visual["type"] == "asset" and a and a["kind"] == "image")
+                or (visual["type"] == "generated" and visual["kind"] == "picture")):
             if "duration" not in scene and "narration" not in scene:
                 problems.append(f"{label}: give it a duration, or narration to set one")
     return problems
@@ -552,13 +562,17 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     return ir
 
 
-def build(folder: Path, open_it: bool = False) -> Path:
+def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
     inputs = _read(folder, INPUTS_FILE)
     brief = _read(folder, BRIEF_FILE, "brief")
     board = _read(folder, STORYBOARD_FILE, "storyboard")
     problems = check_storyboard(board, inputs)
     if problems:
         raise ProduceError(f"{folder / STORYBOARD_FILE} needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+    if any(scene["visual"]["type"] == "generated" for scene in board["scenes"]):
+        first_cut._step(f"Making the generated pictures and clips (this video's cap: ${budget:.2f})")
+        board, inputs, spent = generate.make_all(folder, board, inputs, brief["aspect"], budget)
+        print(f"    spent about ${spent:.2f}")
 
     first_cut._step("Recording the voiceover and preparing the pictures")
     ir = build_ir(folder, board, brief, inputs)
@@ -601,6 +615,8 @@ def main() -> None:
     parser.add_argument("--look", type=Path, nargs="*", default=[], help="LUTs (.cube) to choose the look from")
     parser.add_argument("--language", default="auto", help="spoken language of the footage, or 'auto'")
     parser.add_argument("--open", action="store_true", help="open the project in OpenShot when built")
+    parser.add_argument("--budget", type=float, default=0.0, metavar="DOLLARS",
+                        help="the most this build may spend on generated pictures and clips (default 0: nothing paid)")
     args = parser.parse_args()
     folder = Path(args.folder)
     try:
@@ -618,9 +634,9 @@ def main() -> None:
         elif args.storyboard:
             print(f"\nNext: read {storyboard_request(folder)}")
         else:
-            print(f"\nBuilt: {build(folder, args.open)}")
+            print(f"\nBuilt: {build(folder, args.open, args.budget)}")
     except (ProduceError, MediaError, TranscriptionError, first_cut.NoSpeechError, voiceover.VoiceError,
-            hyperframes.HyperFramesError, ProfileError) as e:
+            hyperframes.HyperFramesError, ProfileError, generate.GenerateError) as e:
         sys.exit(f"\n{e}")
 
 
