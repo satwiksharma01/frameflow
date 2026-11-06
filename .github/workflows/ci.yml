@@ -34,6 +34,11 @@ jobs:
       - name: Run Agent Video's tests (only exercised on Windows so far)
         if: runner.os == 'Windows'
         working-directory: agent-video
+        # The runner's TEMP is an 8.3 short path (RUNNER~1); Agent Video resolves real paths, so its tests'
+        # expected paths would not match. The runner's own temp folder has a long path.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: npm test
       - name: Run the documented synthetic demo
         run: python -m examples.demo_timeline
