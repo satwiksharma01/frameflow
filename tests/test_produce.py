@@ -1,4 +1,7 @@
 """Making a video from a prompt: storyboard checks and the project it builds."""
+import contextlib
+import dataclasses
+import io
 import json
 import subprocess
 import tempfile
@@ -6,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from project import produce
+from project import produce, verify_cuts
 from project.media import _find_tool, level_db, loudness
 from project.validate import ValidationError, validate
 
@@ -88,6 +91,12 @@ class TestStoryboardChecks(unittest.TestCase):
         self.assertEqual((found["mine.cube"], found["warm_film.cube"]), ([], []))
         self.assertEqual(found["teal.cube"], ["look 'teal.cube' is not one of the creator's LUTs or OpenShot's own"])
         self.assertIn("is not there any more", found["gone.cube"][0])
+
+    def test_an_overlay_needs_its_page(self):
+        board = self.board({"visual": {"type": "title", "text": "Hi"}, "duration": 2, "reason": "r"},
+                           overlay={"path": "C:/nowhere/board"})
+        validate(board, "storyboard")
+        self.assertEqual(produce.check_storyboard(board, self.INPUTS), ["overlay C:/nowhere/board has no index.html"])
 
     def test_only_a_product_card_has_a_price(self):
         def scene(card):
@@ -286,6 +295,7 @@ class TestBuildingTheProject(unittest.TestCase):
         if not FOOTAGE.exists():
             self.skipTest("media not present")
         (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [], "pauses": []}))
         inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
                                "folder": "f"}], "assets": [], "music": []}
         board = {"script": "s", "scenes": [
@@ -297,9 +307,100 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(ir["tracks"][0]["clips"][0]["transform"], {"fill": True, "position": {"x": -0.888889}})
         self.assertTrue((self.folder / "f" / "framing-1080x1920.json").exists())
 
+    def _spans(self, pauses, *spans):
+        """The main track's (in, out) for footage scenes of the given spans, the recording's pauses as given."""
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [], "pauses": pauses}))
+        inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
+                               "folder": "f"}], "assets": [], "music": []}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": a, "end": b}, "reason": "r"}
+            for a, b in spans]}
+        ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
+        return [(round(c["source_in"], 6), round(c["source_out"], 6)) for c in ir["tracks"][0]["clips"]]
+
+    def test_a_heard_cut_leaves_the_last_word_room_in_its_pause(self):
+        # On the test recording a span ending 0.12 s into a pause clipped "work": the cut goes where first-cut
+        # puts one, a quarter of a second into the pause, here the one running 1.55-2.4 s.
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        self.assertEqual(self._spans([{"start": 1.55, "end": 2.4}], (1.0, 1.6), (6.0, 7.0)),
+                         [(1.0, 1.8), (6.0, 7.0)])
+
+    def test_a_cut_the_next_scene_carries_on_from_stays(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        # Split at 1.6 s, the recording plays straight on: there is no cut to move.
+        self.assertEqual(self._spans([{"start": 1.55, "end": 2.4}], (1.0, 1.6), (1.6, 3.0)),
+                         [(1.0, 1.6), (1.6, 3.0)])
+
+    def test_a_cut_never_plays_its_pause_backwards(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        # In a 0.2 s pause the next scene starts at 1.7 s, before where the cut would go: it plays straight on.
+        self.assertEqual(self._spans([{"start": 1.55, "end": 1.75}], (1.0, 1.6), (1.7, 3.0)),
+                         [(1.0, 1.7), (1.7, 3.0)])
+
+    def _overlay(self, **extra):
+        page = self.folder / "board"
+        page.mkdir()
+        (page / "index.html").write_text('<div data-composition-id="main" data-duration="1"></div>', encoding="utf-8")
+        return {"path": page.as_posix(), **extra}
+
+    def test_an_overlay_covers_the_video_told_where_its_scenes_and_moments_fall(self):
+        board = {"script": "s", "spoken_captions": True,
+                 "overlay": self._overlay(split=0.6, moments={"named": "the nomad"}), "scenes": [
+                     {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r"},
+                     {"visual": {"type": "asset", "path": "shot.png"}, "narration": "Meet the Nomad", "reason": "r"}]}
+        with mock.patch.object(produce.voiceover, "speak", self._said), \
+                mock.patch.object(produce.hyperframes, "render", lambda c, out, fps: out):
+            ir = produce.build_ir(self.folder, board, BRIEF, self._image())
+        validate(ir, "ir")
+        self.assertEqual([t["id"] for t in ir["tracks"]][:3], ["V1", "Overlay", "Graphics"])   # over the picture only
+        clip = ir["tracks"][1]["clips"][0]
+        total = clip["timeline_duration"]
+        self.assertEqual(clip["timeline_start"], 0.0)
+        self.assertAlmostEqual(total, 3.5, places=1)        # the 2 s title, then 1 s of voice with its lead and tail
+        page = Path(clip["generator_params"]["composition"])
+        self.assertIn(f'data-duration="{total}"', (page / "index.html").read_text(encoding="utf-8"))
+        told = json.loads((page / "frameflow.js").read_text(encoding="utf-8")
+                          .removeprefix("window.FRAMEFLOW = ").rstrip().removesuffix(";"))
+        self.assertEqual(told["scenes"], [{"start": 0.0, "end": 2.0}, {"start": 2.0, "end": total}])
+        # "the" is the second word, said 0.35 s into the line, which starts after the 2 s title and the lead.
+        self.assertAlmostEqual(told["moments"]["named"], 2.0 + produce.VOICE_LEAD_SECONDS + 0.35)
+        self.assertEqual(told["split"], 0.6)
+        lines = next((self.folder / "graphics" / "captions").glob("*/index.html")).read_text(encoding="utf-8")
+        self.assertIn("top:1152px", lines)                  # the spoken captions sit on the split
+
+    def test_an_overlay_moment_that_is_not_said_is_reported(self):
+        board = {"script": "s", "overlay": self._overlay(moments={"trip": "passport"}), "scenes": [
+            {"visual": {"type": "asset", "path": "shot.png"}, "narration": "Meet the Nomad", "reason": "r"}]}
+        with mock.patch.object(produce.voiceover, "speak", self._said), \
+                self.assertRaises(produce.ProduceError) as cm:
+            produce.build_ir(self.folder, board, BRIEF, self._image())
+        self.assertIn("'passport' is not said in the video, so the overlay's moment 'trip' has no time",
+                      str(cm.exception))
+
+    def test_an_overlay_moves_the_recordings_picture_up_clear_of_its_panel(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [], "pauses": []}))
+        inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
+                               "folder": "f"}], "assets": [], "music": []}
+        board = {"script": "s", "overlay": self._overlay(footage_y=-0.05), "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 4.0}, "reason": "r"}]}
+        with mock.patch.object(produce.reframe, "face_centres", lambda video: [(t / 4, 1500.0) for t in range(40)]), \
+                mock.patch.object(produce.reframe, "picture_area", lambda video: (0, 1920)):
+            ir = produce.build_ir(self.folder, board, BRIEF, inputs)
+        self.assertEqual(ir["tracks"][0]["clips"][0]["transform"],
+                         {"fill": True, "position": {"x": -0.888889, "y": -0.05}})
+
     def test_footage_keeps_its_own_sound_without_narration(self):
         if not FOOTAGE.exists():
             self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [], "pauses": []}))
         inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
                                "folder": "f"}], "assets": [], "music": []}
         board = {"script": "s", "scenes": [
@@ -310,6 +411,59 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(clip["volume_db"], level_db(*loudness(FOOTAGE)))   # levelled for the platform, not muted
         self.assertNotIn("transform", clip)                              # 16:9 footage fits as it is
         self.assertEqual(ir["project"]["fps"], 30)                       # the footage's own rate
+
+    def test_a_build_listens_to_the_joins_of_footage_that_is_heard(self):
+        """Each join is heard for the words of its own clips' recordings. Footage under narration, turned right
+        down, says none, and nor does a clip of the creator's: a join between those two is not listened to."""
+        said = {"talk": [(1.1, 1.4, " Hello"), (2.5, 2.9, " work."), (5.1, 5.4, " hidden"), (8.1, 8.4, " back")],
+                "demo": [(1.1, 1.4, " Next"), (2.5, 2.9, " done.")]}
+        footage = []
+        for name, words in said.items():
+            (self.folder / name).mkdir()
+            (self.folder / name / "timing.json").write_text(json.dumps(
+                {"words": [{"start": a, "end": b, "text": t} for a, b, t in words], "pauses": []}))
+            source = _tone(self.folder / f"{name}.wav", 12.0)
+            footage.append({"name": source.name, "source": source.as_posix(), "duration": 12.0, "folder": name})
+        inputs = {"footage": footage, "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "footage", "source": "talk.wav", "start": 1.0, "end": 3.0}, "reason": "r"},
+            {"visual": {"type": "footage", "source": "demo.wav", "start": 1.0, "end": 3.0}, "reason": "r"},
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "duration": 1.0, "reason": "r"},
+            {"visual": {"type": "footage", "source": "talk.wav", "start": 5.0, "end": 7.0}, "narration": "Meet it",
+             "reason": "r"},
+            {"visual": {"type": "footage", "source": "talk.wav", "start": 8.0, "end": 10.0}, "reason": "r"}]}
+        # The join at 4 s lost "done".
+        out = self._built(inputs, board, {2.0: "the work next one", 4.0: "it is all", 7.0: "back again"})
+        self.assertIn("==> Listening to every cut\n"
+                      "    2 of 3 joins sound clean\n"
+                      "    ! join 2 at 0:04.00: expected ...' done.' | ''... but heard 'it is all'\n", out)
+
+    def test_a_build_with_no_recording_heard_does_not_listen(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        self.assertNotIn("Listening", self._built(inputs, board))
+
+    def _built(self, inputs: dict, board: dict, heard: dict | None = None) -> str:
+        """What a build prints, OpenShot and Whisper stood in for: the project is not written, and what is
+        heard around each join is `heard`'s, by where the join is on the timeline."""
+        for name, document in (("inputs.json", inputs), ("brief.json", dict(BRIEF, aspect="16:9", fps=30)),
+                               ("storyboard.json", board)):
+            (self.folder / name).write_text(json.dumps(document))
+        editor = dataclasses.replace(produce.EDITORS[produce.DEFAULT], compile_file=lambda ir, out: Path(out),
+                                     render_audio=lambda project, wav: Path(wav))
+        out = io.StringIO()
+        with mock.patch.dict(produce.EDITORS, {produce.DEFAULT: editor}), \
+                mock.patch.object(produce.openshot_build, "install_dir", lambda: None), \
+                mock.patch.object(verify_cuts, "find_whisper_cli", lambda: Path("whisper-cli")), \
+                mock.patch.object(verify_cuts, "find_model", lambda model: Path("model.bin")), \
+                mock.patch.object(verify_cuts, "_hear",
+                                  lambda wav, start, end, model, tmp: heard[round((start + end) / 2, 2)]), \
+                contextlib.redirect_stdout(out):
+            produce.build(self.folder)
+        return out.getvalue()
 
 
 class TestCuttingToTheBeat(unittest.TestCase):

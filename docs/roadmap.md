@@ -71,7 +71,7 @@ O = observed in the evidence, I = inferred from it, U = unknown.
 | Graphics | Remotion and HyperFrames, GSAP | HyperFrames without GSAP (GSAP's licence doesn't fit), transparent clips on their own track; product cards and lower thirds that come up when their words are said |
 | Reframing to vertical | Face tracking, the crop baked into a new file | Face following as a crop and position on the clip, which the creator can nudge in OpenShot and later edits keep |
 | Long video to shorts | Ranked clips, hook first, metadata per clip | Each short its own vertical project with captions, every cut in a measured pause and heard back; a title, description and tags from `publish` |
-| Reference video | Yes | Planned: the creator's rebuild of Hypit |
+| Reference video | Yes | Agent Video, the creator's from-scratch rebuild of Hypit, in the repository: evidence-backed analysis, 2-3 concepts, a sample, then an editable project |
 | B-roll and stock | 16 stock sources, CLIP search | The creator's own images and clips on a B-roll track, anchored to what is said and moved by later edits; no stock |
 | Voice, music | Piper and ~10 paid voices; music generation and search | Piper with a public-domain voice, or Windows'; the creator's music, with the cuts on its beat when asked |
 | Generated pictures and video | Many providers | Google's Gemini behind one interface, with the creator's key; a free stand-in for trying it |
@@ -198,6 +198,24 @@ shape: analyse pacing, shot lengths, caption style and the hook; propose 2-3
 concepts that keep the structure and change the subject; make a short sample
 before the whole video. In Frameflow it produces a storyboard, so the rest of
 the prompt workflow builds it as an editable project.
+*Status:* built and checked (2026-11-04): the rebuild,
+Agent Video 1.1, now lives in `agent-video/` (Node.js, no dependencies, its
+140 tests passing there). `produce --reference` hands it the creator's
+prepared recordings with their measured pauses; the agent writes the
+analysis and two or three concepts from the reference itself; `--concepts`
+checks them and `--concept` (or a `--sample`) makes the chosen one the
+storyboard, checked against Frameflow's schema, for the usual build. Checked
+on Hypit's own 20 s tier-list reel with the test recording: both concepts
+built as editable 9:16 projects with its beats and its pace, every cut heard
+back. A cut a frame inside a pause clipped a word's tail, so a heard span now
+ends a quarter of a second into its pause (see findings). A short pause right
+after a word can still be inside it, which only listening finds, so a produce
+build now listens to its joins as first-cut and edit do, each clip's words
+from its own recording. What Agent Video's storyboards cannot say, such as the
+reel's tier list, banner and pictures popping up, a storyboard's `overlay`
+draws: one HyperFrames composition over the whole video, told where each scene
+and spoken moment falls. Checked by rebuilding the reel with the creator in it
+(see findings).
 
 ### 4. YouTube videos and pitches
 

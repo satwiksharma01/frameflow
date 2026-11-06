@@ -878,6 +878,136 @@ any call: "would cost about $1.06, over this video's cap of $0.00", each scene
 listed. Gemini's requests were checked against a local server that answers as
 the Interactions API does, not against Google: no key, and no money.
 
+## Made like a reference video
+
+`produce --reference VIDEO` hands a reference video to Agent Video, the
+creator's from-scratch rebuild of Hypit (`agent-video/`, Node.js, no
+dependencies). It measures the reference (shots, pacing, a dozen frames and a
+contact sheet) and writes a request. The agent watches and listens to the
+reference and writes what it found, each claim with the stretch of the
+reference that shows it or marked unknown, and two or three concepts, each a
+Frameflow storyboard of the creator's own material. Agent Video checks both;
+`--concept` makes one the storyboard, or `--sample 10` its opening ten seconds
+in whole scenes, and the usual build makes the project.
+
+- **Only what Agent Video knows is passed to it.** It refuses fields it does
+  not know, so Frameflow hands over the inventory's recordings, assets, music,
+  prompt and script, and the brief's title, format, shape, length, audience,
+  tone and summary, but not its looks, facts or skills.
+- **Its sessions stay where they were made.** The evidence names the session's
+  own files, so a copied session is refused ("The inspection report is
+  missing from evidence provenance"); a copy of a video folder prepares its own.
+- **Every cut sits in a measured pause, a frame from its edges.** Frameflow
+  hands over the pauses it measured when the recording was prepared, and
+  Agent Video refuses a span that starts or ends anywhere else.
+- **That leaves the last word too little room.** A span ending 0.12 s into the
+  0.63 s pause after "boring work" was heard as "boring vibes"; uncut, and ended
+  a quarter of a second into the pause, it was "boring work". A word's tail
+  fades below the level a pause is measured at but is still heard. A produce
+  build now ends footage that is heard where first-cut would cut, at least a
+  quarter of a second into its pause as far as the pause allows, unless the
+  next scene plays on from there. Starts stay where the agent put them: the
+  three in the sample, 0.04-0.1 s before their words, were all heard whole.
+- **A short pause right after a word can be inside it.** "Editing work" ended
+  in a 0.13 s pause, and the clip was heard as "editing": the silence was the
+  closure before the "k", whose burst comes after it. Ended in the next pause,
+  0.3 s later, it was heard whole. Only listening finds this: here the joins
+  were heard with first-cut's check, run by hand, and a produce build now
+  runs it itself.
+- **A produce build listens to the joins of footage that is heard.** As in a
+  first cut, the main track's sound is rendered through OpenShot's engine and
+  each join is heard again, but each side's words come from that clip's own
+  recording, since a storyboard can cut between several. Footage under
+  narration is turned right down, and a clip or a still has no recorded
+  words, so that side expects none; a join with nothing heard on either side
+  is not listened to, and a video with no footage heard skips the step. A
+  suspect join is reported, not refused, because Whisper wobbles (the
+  "editing bar" below). A cut to a title or a composition leaves the main
+  track empty, so it is not a join and is not listened to, as the end of a
+  first cut is not.
+
+Checked on a real reel (2026-11-04): Hypit's own 20 s 9:16 demo, "Ranking the
+best footballers", made from the test recording (5:26 of Satwik talking about
+Frameflow; `output/reference-check/`). Agent Video measured it in 3 s: one
+shot, no cut. The analysis found the verdict said in the first 1.4 s ("Ronaldo
+is D tier"), captions of two to four words with the spoken word boxed, a split
+frame (the creator above a tier list, a portrait of the player being ranked,
+pictures over the list as each joke is said), one fast voice (about 200 words
+a minute) with nothing above -40 dB in its gaps, and seven beats: verdict,
+three reasons, a turn to the second player, more reasons, verdict. Two
+concepts kept the beats:
+
+| Concept | The verdicts | Built |
+|---|---|---|
+| verdict-titles | Full-screen titles, "EDITING BY HAND: D TIER" first and "FRAMEFLOW: S TIER" last, around eight of his lines | 21.6 s, 10 scenes, 28 caption lines; the turn at 8.7 s (the reel's at 10.1 s); his lines at about 200 words a minute; nothing wrong in the picture |
+| verdict-cards | Lower thirds, his face never leaving the screen, as in the reel | 19.0 s, 9 scenes, 31 caption lines; the "Editing by hand" card reported over 30% of his face |
+
+An 8.2 s sample of the first, its five opening scenes, was built first; its
+first join was the clipped "work". After both fixes the check heard every join
+of both projects whole except one in each, after "editing work": through the
+same 2.5 s window the uncut recording is heard as "editing bar", and the whole
+line as "editing work", so it is the window, not the cut. Built again with
+the check in the build, the titles concept printed "6 of 7 joins sound clean"
+and named that join, heard as "editing or create". Drawn through
+OpenShot's engine twice a second, the titles concept's first frame is black,
+its title fading in, and both its verdicts are text on black where the reel
+says them over the face.
+
+Not yet: the tier list, the portraits and the picture inserts as Agent Video
+concepts, which its storyboards cannot say (an overlay draws them: see the
+next section); moving a card off a face from the storyboard; narration (Agent Video's
+storyboards carry none); Agent Video's tests on Linux. The transcript hears
+"Claude" as "cloud" in the recording's first half, so the concepts left those
+lines out rather than caption a wrong word.
+
+## A layout over the whole video
+
+A storyboard's `overlay` is one HyperFrames composition drawn over the whole
+video, above the picture and under titles, cards and captions: a layout that
+stays up, such as a tier list under the speaker with a banner across the top,
+and whatever comes up on it as things are said. The agent writes it. It is a
+clip on its own track, so the creator can trim, move or switch it off in
+OpenShot.
+
+- **The page is told the video it is in.** Frameflow copies the composition
+  into the project's `graphics/` and writes `frameflow.js` beside it:
+  `window.FRAMEFLOW` holds the video's length, each scene's start and end on
+  the timeline, and the second each of its `moments` is first said, found as
+  cards' and B-roll's `when` words are. A moment that is not said stops the
+  build.
+- **Its length is written into the page.** HyperFrames takes a render's
+  length from the page's `data-duration`, not from what its script sets: a
+  probe whose script stretched itself to 3 s rendered 1 s. So Frameflow sets
+  every `data-duration` in the copy to the video's length, and the page times
+  everything from `FRAMEFLOW`.
+- **The picture makes room.** `split` is where the composition's own panel
+  starts, and the spoken captions sit on that line, as a reel's often do on the
+  seam. `footage_y` moves the recordings' picture up so the face clears the
+  panel.
+
+Checked by rebuilding the reel from the check above with Satwik in it
+(2026-11-04, `output/reference-swap/`). A third concept, his nine lines with no
+titles, kept the reel's beats. Its overlay, written as the agent, drew a banner
+("RANKING THE BEST WAYS TO EDIT"), the tier list under his face, a "BY HAND"
+portrait stamped D tier in the first second that drops into D at the turn, a
+"FRAMEFLOW" portrait that takes its place and lands in S under an "S TIER"
+stamp at the end, and seven drawn cards, each on its words: boring work, three
+takes, a spinning clock, repetitive work crossed out, a first cut, "1 hour"
+struck through, and a bar filling to 95%. Built, it is 20.1 s (the reel's is
+20.07), with 9 scenes and 31 caption lines on the split. The picture check
+found nothing wrong in 50 frames, and 7 of 8 joins were heard clean, the eighth
+the "editing bar" of the check's window. Drawn through OpenShot's engine beside
+the reel at the same beats, the frame, the order and the pace match. The reel's
+list starts full of players, its pictures are photos and its captions box the
+spoken word in blue; his list holds only what he ranks, the cards are drawn,
+and his captions colour the word in Frameflow's yellow. The first build's cards
+covered half the list's width against the reel's three quarters; drawn a third
+larger, they match.
+
+Not yet: moving one card of an overlay on its own in OpenShot (the overlay is a
+single clip); caption lines an edit adds go at the usual height, not on the
+split.
+
 ## Deliberately not done
 
 - **Headless video export**: the creator exports from OpenShot themselves. The

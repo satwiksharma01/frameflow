@@ -1,0 +1,19 @@
+{
+  "name": "agent-video-local",
+  "version": "1.1.0",
+  "description": "An independent, local video workflow for coding agents",
+  "type": "module",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "engines": { "node": ">=22" },
+  "bin": { "agent-video": "bin/agent-video.mjs" },
+  "exports": { ".": "./src/integration.mjs" },
+  "files": ["bin", "src", "skills", "scripts/smoke.mjs", "scripts/frameflow-smoke.mjs", "examples/hello/project.json", "examples/hello/edits.json", "examples/hello/words.json", "examples/hello/variants.json", "README.md", "FORMAT.md", "FRAMEFLOW.md", "THIRD_PARTY.md"],
+  "scripts": {
+    "test": "node --test",
+    "start": "node bin/agent-video.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:frameflow": "node scripts/frameflow-smoke.mjs",
+    "demo": "node bin/agent-video.mjs render examples/hello/project.json --out output/hello.mp4"
+  }
+}

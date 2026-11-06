@@ -21,6 +21,7 @@ the same project again does not render again.
 import hashlib
 import html
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -219,6 +220,22 @@ def render_cached(composition: Path, folder: Path, fps: float) -> Path:
     """A composition rendered into the project's graphics/ folder, unless it already is."""
     out = folder / GRAPHICS_DIR / f"{_digest(composition, f'{VERSION}|{fps}')}.mov"
     return out if out.exists() else render(composition, out, fps)
+
+
+def overlay(composition: Path, folder: Path, duration: float, data: dict) -> Path:
+    """A copy of a composition drawn over a whole video, in the project's graphics/ folder: every
+    data-duration in its index.html set to the video's length (HyperFrames reads the length from the
+    page, not from its script), and window.FRAMEFLOW, its length and `data`, in frameflow.js beside it."""
+    length = round(duration, 6)
+    page = re.sub(r'data-duration="[^"]*"', f'data-duration="{length}"',
+                  (composition / "index.html").read_text(encoding="utf-8"))
+    script = f"window.FRAMEFLOW = {json.dumps({'duration': length, **data})};\n"
+    copy = folder / GRAPHICS_DIR / "overlay" / _digest(composition, page + script)
+    if not copy.exists():
+        shutil.copytree(composition, copy)
+        (copy / "index.html").write_text(page, encoding="utf-8")
+        (copy / "frameflow.js").write_text(script, encoding="utf-8")
+    return copy
 
 
 def render_generated(ir: dict, folder: Path) -> dict:

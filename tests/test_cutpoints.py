@@ -131,9 +131,17 @@ class TestJoinVerification(unittest.TestCase):
     ]
 
     def test_boundary_words_are_the_ones_either_side_of_the_cut(self):
-        before, after = words_at_boundary(self.WORDS, {"source_in": 0.9, "source_out": 1.9},
+        before, after = words_at_boundary(lambda clip: self.WORDS, {"source_in": 0.9, "source_out": 1.9},
                                           {"source_in": 4.0, "source_out": 4.7})
         self.assertEqual((before, after), ("cut", "Claude"))
+
+    def test_each_side_s_word_is_from_its_own_clip_s_recording(self):
+        # Cut from one recording to another: the same source seconds say different words in each.
+        said = {"talk.mp4": self.WORDS, "demo.mp4": [{"start": 4.0, "end": 4.4, "text": "Next"}]}
+        before, after = words_at_boundary(lambda clip: said[clip["source"]],
+                                          {"source": "talk.mp4", "source_in": 0.9, "source_out": 1.9},
+                                          {"source": "demo.mp4", "source_in": 4.0, "source_out": 4.7})
+        self.assertEqual((before, after), ("cut", "Next"))
 
     def test_a_word_inside_the_removed_span_is_not_expected(self):
         """The false positive from the first real verification run.
@@ -147,7 +155,7 @@ class TestJoinVerification(unittest.TestCase):
             {"start": 122.24, "end": 125.24, "text": "so"},     # drifted; spans the cut
             {"start": 125.24, "end": 126.11, "text": "take"},   # inside the removed span
         ]
-        before, after = words_at_boundary(words, {"source_in": 121.37, "source_out": 122.20},
+        before, after = words_at_boundary(lambda clip: words, {"source_in": 121.37, "source_out": 122.20},
                                           {"source_in": 122.70, "source_out": 123.20})
         self.assertEqual(before, "better")
         self.assertEqual(after, "")  # nothing reliable on that side - check only what we have

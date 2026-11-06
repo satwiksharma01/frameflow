@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "title": "From a brief to a video",
+  "canvas": { "width": 720, "height": 1280, "fps": 30 },
+  "clips": [
+    { "id": "idea", "kind": "color", "color": "#142036", "duration": 2 },
+    { "id": "edit", "kind": "color", "color": "#113C3B", "duration": 2 },
+    { "id": "ship", "kind": "color", "color": "#4D2440", "duration": 2 }
+  ],
+  "captions": [
+    { "text": "01 / THE IDEA", "start": 0, "end": 2, "position": "top", "fontSize": 28, "color": "#A5C5EF" },
+    { "text": "Make the idea\nvisible.", "start": 0, "end": 2, "position": "center", "fontSize": 64 },
+    { "text": "02 / THE EDIT", "start": 2, "end": 4, "position": "top", "fontSize": 28, "color": "#A5E3C8" },
+    { "text": "Keep every choice\neditable.", "start": 2, "end": 4, "position": "center", "fontSize": 56 },
+    { "text": "03 / THE NEXT CUT", "start": 4, "end": 6, "position": "top", "fontSize": 28, "color": "#EDB3D6" },
+    { "text": "Change the words.\nMake another cut.", "start": 4, "end": 6, "position": "center", "fontSize": 52 },
+    { "text": "LOCAL / EDITABLE / AGENT-DRIVEN", "start": 0, "end": 6, "position": "bottom", "fontSize": 22, "color": "#D5DBE5" }
+  ],
+  "audio": []
+}

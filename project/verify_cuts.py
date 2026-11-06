@@ -94,14 +94,15 @@ def words_in_clip(words: list[dict], clip: dict, tolerance: float = 0.05) -> lis
             and w["end"] <= clip["source_out"] + tolerance]
 
 
-def words_at_boundary(words: list[dict], left: dict, right: dict) -> tuple[str, str]:
-    """The last word of the outgoing clip and the first of the incoming one.
+def words_at_boundary(words: Callable[[dict], list[dict]], left: dict, right: dict) -> tuple[str, str]:
+    """The last word of the outgoing clip and the first of the incoming one, each from
+    `words(clip)`: the words that clip plays, timed in its own recording.
 
-    Either can be empty when the word timings in that stretch are too unreliable
-    to name one; the caller simply checks whichever side it has.
+    Either can be empty when the clip says nothing, or the word timings in that
+    stretch are too unreliable to name one; the caller simply checks whichever side it has.
     """
-    before = words_in_clip(words, left)
-    after = words_in_clip(words, right)
+    before = words_in_clip(words(left), left)
+    after = words_in_clip(words(right), right)
     return (before[-1]["text"] if before else "", after[0]["text"] if after else "")
 
 
@@ -170,13 +171,15 @@ def _hear(wav: Path, start: float, end: float, model: Path, tmp: Path) -> str:
     return " ".join(seg.get("text", "").strip() for seg in whisper.get("transcription", []))
 
 
-def verify_joins(ir: dict, timing: dict, project_path: Path | str,
+def verify_joins(ir: dict, timing: dict | Callable[[dict], list[dict]], project_path: Path | str,
                  model: Path | str | None = None,
                  context: float = CONTEXT_SECONDS,
                  include: Callable[[dict, dict], bool] | None = None,
                  render: Callable[[Path | str, Path | str], Path] = render_audio) -> list[JoinCheck]:
     """Render the project and check the words either side of every cut survived.
 
+    `timing` is the recording's word timings; a video cut from several recordings
+    gives instead the words each clip plays, as words_at_boundary takes them.
     `include(left, right)` limits the check to some joins - an edit that makes
     two new cuts should not spend a Whisper pass on each of the thirty it left alone.
     `render` is the project's editor's: melt for Shotcut, render_osp_audio for OpenShot.
@@ -188,7 +191,7 @@ def verify_joins(ir: dict, timing: dict, project_path: Path | str,
         # The project is already built; a missing tool means "not listened to", not "failed".
         raise VerificationError(str(e)) from e
     clips = main_track(ir)["clips"]
-    words = timing["words"]
+    words = timing if callable(timing) else lambda clip: timing["words"]
     checks: list[JoinCheck] = []
 
     with tempfile.TemporaryDirectory() as tmp:

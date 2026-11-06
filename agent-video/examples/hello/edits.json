@@ -1,0 +1,9 @@
+{
+  "title": "A second cut",
+  "captions": [
+    { "text": "SAME STRUCTURE. NEW MESSAGE.", "start": 0, "end": 6, "position": "top", "fontSize": 26, "color": "#C6DFEE" },
+    { "text": "Start with\na better question.", "start": 0, "end": 2, "position": "center", "fontSize": 56 },
+    { "text": "Make the answer\nworth watching.", "start": 2, "end": 4, "position": "center", "fontSize": 56 },
+    { "text": "One project.\nAnother possibility.", "start": 4, "end": 6, "position": "center", "fontSize": 52 }
+  ]
+}

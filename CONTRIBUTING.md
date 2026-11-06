@@ -6,6 +6,7 @@ Before opening a pull request:
 
 ```bash
 python -m unittest discover -s tests -v
+npm test --prefix agent-video
 python -m examples.demo_timeline
 ```
 

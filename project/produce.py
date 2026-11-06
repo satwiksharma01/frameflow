@@ -13,6 +13,8 @@ agent mode; each stage writes a request for it and checks what it writes back.
         -> checks it, each fact's quote on its page (research.py); the creator confirms it
     python -m project.produce <folder> --storyboard
         -> storyboard_request.md; the agent writes storyboard.json, the creator confirms it
+    python -m project.produce <folder> --reference VIDEO, then --concepts, then --concept ID [--sample SECONDS]
+        -> instead: a storyboard made like a reference video, through Agent Video (reference.py)
     python -m project.produce <folder> --build [--open]
         -> voiceover, graphics, stills as clips -> IR -> OpenShot project
 
@@ -30,15 +32,15 @@ import json
 import sys
 from pathlib import Path
 
-from project import (beats, broll, captions, first_cut, generate, hyperframes, look, openshot_build, reframe, research,
-                     voiceover)
-from project.cutpoints import frame_align
+from project import (beats, broll, captions, first_cut, generate, hyperframes, look, openshot_build, reference, reframe,
+                     research, voiceover)
+from project.cutpoints import frame_align, place_in_pause
 from project.editors import DEFAULT, EDITORS
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
 from project.validate import ValidationError, load_schema, validate
-from project.verify_cuts import tokenize
+from project.verify_cuts import VerificationError, tokenize, verify_joins
 
 INPUTS_FILE = "inputs.json"
 BRIEF_FILE = "brief.json"
@@ -197,13 +199,40 @@ def _looks(inputs: dict) -> list[dict]:
     return inputs.get("looks", []) + _openshot_looks()
 
 
-def storyboard_request(folder: Path) -> Path:
-    inputs = _read(folder, INPUTS_FILE)
+def _confirmed_brief(folder: Path) -> dict:
+    """The brief, refused while it has open questions or a fact its source does not bear out."""
     brief = _read(folder, BRIEF_FILE, "brief")
     if brief.get("open_questions"):
         raise ProduceError("the brief still has open questions; ask the creator, update brief.json "
                            "and remove them:\n" + "\n".join(f"  - {q}" for q in brief["open_questions"]))
     check_brief(folder)         # again, in case the brief changed after it was checked
+    return brief
+
+
+def reference_session(folder: Path, video: Path) -> Path:
+    """Have Agent Video measure a video to make this one like, against the creator's prepared media;
+    the request the agent answers next (see reference.py)."""
+    return reference.prepare(folder, video, _read(folder, INPUTS_FILE), _confirmed_brief(folder))
+
+
+def use_concept(folder: Path, concept: str, sample: float | None = None) -> Path:
+    """Make the chosen concept - or its opening `sample` seconds - the storyboard, checked as any is."""
+    inputs = _read(folder, INPUTS_FILE)
+    board = reference.export(folder, concept, sample)
+    try:
+        validate(board, "storyboard")
+    except ValidationError as e:
+        raise ProduceError(f"concept {concept!r} is not a storyboard Frameflow can build: {e}") from e
+    problems = check_storyboard(board, inputs)
+    if problems:
+        raise ProduceError(f"concept {concept!r} needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+    first_cut._write_json(folder / STORYBOARD_FILE, board)
+    return folder / STORYBOARD_FILE
+
+
+def storyboard_request(folder: Path) -> Path:
+    inputs = _read(folder, INPUTS_FILE)
+    brief = _confirmed_brief(folder)
     parts = [f"""# Storyboard
 
 Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, matching the schema below.
@@ -273,6 +302,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 {generated_note}{brand_note}{music_note}{look_note}- For a reel or a short, set `spoken_captions` to true unless the brief says otherwise: what is said pops in word by word. A scene's own `caption` replaces them for that scene.
 - When a product is named over footage or an image, give that scene a `product` card (its name, price and a line under it) with `when` set to the words that name it. A `lower_third` introduces a person on camera.
 - Over footage of the creator talking, cut away to their images and clips as `broll` where what is said matches what they show (look at each image); the recording keeps playing underneath.
+- For a layout that stays up the whole video - a tier list under the speaker, a banner, things popping up as they are said - write one HyperFrames composition and make it the storyboard's `overlay`: `split` where its panel starts (the spoken captions sit on that line), `footage_y` to move the speaker's picture up clear of it, and `moments` for the words its parts come up on. Its page loads `frameflow.js` and times everything from `window.FRAMEFLOW`.
 - Then show the creator the storyboard - the script, and each scene in a line - and wait for them to confirm before running:
 
   ```
@@ -310,6 +340,8 @@ def check_storyboard(board: dict, inputs: dict) -> list[str]:
             problems.append(f"look {board['look']['path']!r} is not one of the creator's LUTs or OpenShot's own")
         elif not Path(look["path"]).is_file():      # OpenShot would quietly leave the picture as it is
             problems.append(f"look {look['path']} is not there any more")
+    if "overlay" in board and not (Path(board["overlay"]["path"]) / "index.html").exists():
+        problems.append(f"overlay {board['overlay']['path']} has no index.html")
     for n, scene in enumerate(board["scenes"], start=1):
         visual, label = scene["visual"], f"scene {n} ({scene['visual']['type']})"
         if visual["type"] == "footage":
@@ -395,6 +427,20 @@ def _crop_keys(folder: Path, footage: dict, width: int, height: int) -> list[dic
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _heard_end(scenes: list[dict], n: int, pauses: list[dict], fps: float) -> float:
+    """Where scene n's footage ends when it is heard: at least as far into its pause as first-cut cuts, a quarter
+    of a second after the words (a span ending 0.12 s after "work" clipped it), unless the next scene plays on sooner."""
+    visual = scenes[n]["visual"]
+    end = visual["end"]
+    pause = next((p for p in pauses if p["start"] <= end <= p["end"]), None)
+    if pause is not None:
+        end = max(end, place_in_pause(pause, "keep", "remove", fps))
+        after = scenes[n + 1]["visual"] if n + 1 < len(scenes) else {}
+        if after.get("source") == visual["source"] and visual["end"] <= after["start"] < end:
+            end = after["start"]        # the next scene starts in this pause: play straight on into it
+    return frame_align(end, fps)
+
+
 def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     """The storyboard as an IR, making the voiceover and still clips it needs."""
     width, height = SIZES[brief["aspect"]]
@@ -410,6 +456,8 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
     # The look grades the main track's picture, and B-roll takes it from there (broll.place); graphics keep their colours.
     lut = look and {"path": _match(look["path"], _looks(inputs), "path")["path"],
                     **({"intensity": look["intensity"]} if "intensity" in look else {})}
+    overlay = board.get("overlay")
+    spans, everything_said = [], []      # each scene's place on the timeline, and every word heard, for the overlay
 
     for n, scene in enumerate(board["scenes"], start=1):
         visual = scene["visual"]
@@ -424,6 +472,9 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
         if visual["type"] == "footage":
             f = _match(visual["source"], inputs["footage"], "name")
             start, end = frame_align(visual["start"], fps), frame_align(visual["end"], fps)
+            if not spoken:      # under narration the recording is turned right down, so no word of it is clipped
+                end = _heard_end(board["scenes"], n - 1, json.loads(
+                    (folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8")).get("pauses", []), fps)
             length = end - start
             if length + 1e-6 < needed:
                 problems.append(f"scene {n}: the narration needs {needed:.1f}s but the footage span "
@@ -471,17 +522,21 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                     x = reframe.clip_offset(_crop_keys(folder, f, width, height), start, end)
                     if x:
                         clip["transform"]["position"] = {"x": x}
+            if visual["type"] == "footage" and overlay and "footage_y" in overlay:     # clear of the overlay's panel
+                clip.setdefault("transform", {}).setdefault("position", {})["y"] = overlay["footage_y"]
             if lut:
                 clip["effects"] = [{"type": "lut", "params": dict(lut)}]
             main.append(clip)
         heard = None        # what is said in the scene, on the timeline: the narration, else the footage's speech
-        if board.get("spoken_captions") or "cards" in scene or "broll" in scene:
+        if board.get("spoken_captions") or "cards" in scene or "broll" in scene or overlay:
             if spoken:
                 words = json.loads(spoken[0].with_suffix(".json").read_text(encoding="utf-8"))
                 heard = captions.run(words, 0.0, length - VOICE_LEAD_SECONDS, cursor + VOICE_LEAD_SECONDS)
             elif visual["type"] == "footage":
                 timing = json.loads((folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))
                 heard = captions.run(timing["words"], start, end, cursor)
+            if heard:
+                everything_said += heard["words"]
         if "caption" in scene:
             fixed_captions.append({"timeline_start": cursor, "timeline_duration": length,
                                    "generator": "hyperframes", "text": scene["caption"]})
@@ -522,11 +577,26 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
                           "source_out": spoken[1], "timeline_start": round(cursor + VOICE_LEAD_SECONDS, 6),
                           "timeline_duration": spoken[1],
                           **({"volume_db": gain} if (gain := _level(spoken[0])) else {})})
+        spans.append({"start": cursor, "end": round(cursor + length, 6)})
         cursor = round(cursor + length, 6)
         cuts.append(cursor)
 
+    moments = {}
+    for name, phrase in (overlay or {}).get("moments", {}).items():
+        at = _said_at(everything_said, phrase)
+        if at is None:
+            problems.append(f"{phrase!r} is not said in the video, so the overlay's moment {name!r} has no time; "
+                            f"use words from its narration or transcript")
+        else:
+            moments[name] = round(at, 6)
     if problems:
         raise ProduceError("the storyboard needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+    overlaid = []
+    if overlay:     # told the video's length, where each scene falls and when each moment is said
+        data = {"scenes": spans, "moments": moments, **({"split": overlay["split"]} if "split" in overlay else {})}
+        page = hyperframes.overlay(Path(overlay["path"]).resolve(), folder, cursor, data)
+        overlaid.append({"timeline_start": 0.0, "timeline_duration": cursor, "generator": "hyperframes",
+                         "generator_params": {"composition": str(page.resolve())}})
 
     if cut_to_beat and len(cuts) > 1:
         off = [str(n) for n, c in enumerate(cuts[:-1], start=1) if not any(abs(c - b) < 1e-3 for b in beat_times)]
@@ -534,7 +604,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
               + (f", at {beats.tempo(beat_times):.0f} BPM" if len(beat_times) > 1 else ": the music has no steady beat")
               + (f"; the cut after scene {', '.join(off)} stays put: a word, the narration or the end of a clip "
                  f"is in the way, or the music has stopped" if off and len(beat_times) > 1 else ""))
-    tracks = [("V1", "video", main), ("Graphics", "graphics", graphics),
+    tracks = [("V1", "video", main), ("Overlay", "graphics", overlaid), ("Graphics", "graphics", graphics),
               ("Captions", "captions", fixed_captions), ("Voice", "audio", voice)]
     if "music" in board:
         m = _match(board["music"]["path"], inputs["music"], "path")
@@ -558,7 +628,7 @@ def build_ir(folder: Path, board: dict, brief: dict, inputs: dict) -> dict:
         broll.make_stills(ir, folder)
     if said:
         first_cut._step("Rendering word-by-word captions with HyperFrames")
-        print(f"    {captions.add(ir, said, folder)} lines")
+        print(f"    {captions.add(ir, said, folder, (overlay or {}).get('split'))} lines")
     return ir
 
 
@@ -588,12 +658,31 @@ def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
     project = editor.compile_file(ir_path, folder / f"{stem}{editor.suffix}")
     total = max((c["timeline_start"] + c["timeline_duration"] for t in ir["tracks"] for c in t["clips"]), default=0)
     print(f"    {len(board['scenes'])} scenes, {total:.1f}s (brief asked for about {brief['target_seconds']}s)")
-    for tid in ("V1", "Graphics", "Captions", "Voice", "Music"):
+    for tid in ("V1", "Overlay", "Graphics", "Captions", "Voice", "Music"):
         track = next((t for t in ir["tracks"] if t["id"] == tid), None)
         if track and track["clips"]:
             print(f"    {tid}: {len(track['clips'])} clip(s)")
     if "look" in board:
         print(f"    look: {Path(board['look']['path']).name}, a Color Map effect on each picture clip")
+    words = {f["source"]: json.loads(
+        (folder / f["folder"] / first_cut.TIMING_FILE).read_text(encoding="utf-8"))["words"] for f in inputs["footage"]}
+
+    def said(clip: dict) -> list[dict]:
+        """What a main-track clip says aloud: its recording's words, none under narration, where the recording is
+        turned right down, and none from an asset or a still."""
+        return [] if clip.get("volume_db", 0.0) <= UNDER_NARRATION_DB else words.get(clip["source"], [])
+
+    if any(said(c) for c in ir["tracks"][0]["clips"]):
+        first_cut._step("Listening to every cut")
+        try:
+            checks = verify_joins(ir, said, project, render=editor.render_audio)
+        except VerificationError as e:
+            print(f"    skipped: {e}")
+        else:
+            suspect = [c for c in checks if not c.ok]
+            print(f"    {len(checks) - len(suspect)} of {len(checks)} joins sound clean")
+            for check in suspect:
+                print(f"    ! {check.summary}")
     look.report(project, ir)
     if open_it:
         editor.open(project)
@@ -607,6 +696,10 @@ def main() -> None:
     stage.add_argument("--prepare", metavar="PROMPT", help="start: the creator's prompt, in their words")
     stage.add_argument("--brief", action="store_true", help="check brief.json, every fact against its source")
     stage.add_argument("--storyboard", action="store_true", help="after the brief is confirmed")
+    stage.add_argument("--reference", type=Path, metavar="VIDEO",
+                       help="instead, after the brief is confirmed: a video to make this one like, through Agent Video")
+    stage.add_argument("--concepts", action="store_true", help="check the agent's analysis and concepts, and list them")
+    stage.add_argument("--concept", metavar="ID", help="make the chosen concept the storyboard")
     stage.add_argument("--build", action="store_true", help="after the storyboard is confirmed")
     parser.add_argument("--script", type=Path, help="a script the creator wrote")
     parser.add_argument("--footage", type=Path, nargs="*", default=[], help="the creator's recordings")
@@ -617,7 +710,11 @@ def main() -> None:
     parser.add_argument("--open", action="store_true", help="open the project in OpenShot when built")
     parser.add_argument("--budget", type=float, default=0.0, metavar="DOLLARS",
                         help="the most this build may spend on generated pictures and clips (default 0: nothing paid)")
+    parser.add_argument("--sample", type=float, metavar="SECONDS",
+                        help="with --concept: only its opening scenes, at most this long, for a first look")
     args = parser.parse_args()
+    if args.sample and not args.concept:
+        parser.error("--sample goes with --concept")
     folder = Path(args.folder)
     try:
         if args.prepare:
@@ -633,10 +730,24 @@ def main() -> None:
             print("\nNext: show the creator the brief, and wait for them to confirm it.")
         elif args.storyboard:
             print(f"\nNext: read {storyboard_request(folder)}")
+        elif args.reference:
+            if not args.reference.is_file():
+                raise ProduceError(f"not found: {args.reference}")
+            print(f"\nNext: have your agent follow {reference_session(folder, args.reference)}, writing "
+                  f"analysis.json and concepts.json beside it, then run --concepts.")
+        elif args.concepts:
+            for concept in reference.concepts(folder):
+                print(f"  {concept['id']}: {concept['title']} - {concept['summary']}")
+            print("\nNext: show the creator the concepts, with what the analysis found, and run --concept with "
+                  "their choice.")
+        elif args.concept:
+            path = use_concept(folder, args.concept, args.sample)
+            print(f"\nStoryboard: {path} ({f'the opening {args.sample:g}s of ' if args.sample else ''}{args.concept})")
+            print("Next: show the creator the storyboard, and wait for them to confirm it before --build.")
         else:
             print(f"\nBuilt: {build(folder, args.open, args.budget)}")
     except (ProduceError, MediaError, TranscriptionError, first_cut.NoSpeechError, voiceover.VoiceError,
-            hyperframes.HyperFramesError, ProfileError, generate.GenerateError) as e:
+            hyperframes.HyperFramesError, ProfileError, generate.GenerateError, reference.AgentVideoError) as e:
         sys.exit(f"\n{e}")
 
 

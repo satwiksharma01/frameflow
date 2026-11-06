@@ -41,6 +41,18 @@
         "intensity": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Optional: how strongly it grades, 1 (the LUT as made) when absent." }
       }
     },
+    "overlay": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "description": "Optional: a HyperFrames composition you write, drawn over the whole video above the picture and under titles, cards and captions - a layout such as a tier list under the speaker, with what pops up as things are said. Its page loads frameflow.js, which Frameflow writes beside a copy of it: window.FRAMEFLOW = {duration, split, scenes: [{start, end}], moments: {name: seconds}}, in seconds of the video. Frameflow sets every data-duration in the copy to the video's length, so time what happens from FRAMEFLOW.",
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "description": "The composition's folder, with its index.html." },
+        "split": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1, "description": "Optional: how far down the frame the picture above gives way to the composition's own panel below, as a fraction of its height. Spoken captions sit on this line." },
+        "footage_y": { "type": "number", "minimum": -0.5, "maximum": 0.5, "description": "Optional: how far the recordings' picture moves down, negative for up, as a fraction of the frame's height, so the speaker's face sits clear of the panel." },
+        "moments": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 }, "description": "Optional: named moments for the composition, each words said in the video, written as they are said there (\"boring work\"). FRAMEFLOW.moments gives the second each is first said." }
+      }
+    },
     "spoken_captions": {
       "type": "boolean",
       "description": "Optional: show what is said as captions that pop in word by word - the narration, or the speech in footage that has no narration. A scene with its own caption shows that instead. Usual for reels and shorts."

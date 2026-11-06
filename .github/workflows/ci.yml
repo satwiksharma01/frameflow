@@ -31,5 +31,9 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Run tests (media-dependent cases report skips)
         run: python -m unittest discover -s tests -v
+      - name: Run Agent Video's tests (only exercised on Windows so far)
+        if: runner.os == 'Windows'
+        working-directory: agent-video
+        run: npm test
       - name: Run the documented synthetic demo
         run: python -m examples.demo_timeline

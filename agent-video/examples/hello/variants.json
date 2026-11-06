@@ -1,0 +1,25 @@
+[
+  { "id": "first-cut", "patch": { "title": "Follow the supplied words" } },
+  {
+    "id": "second-cut",
+    "patch": {
+      "title": "Same anchors, another message",
+      "captions": [
+        { "fromWord": "w01", "toWord": "w04", "text": "Make ideas\nmove.", "position": "center", "fontSize": 64 },
+        { "fromWord": "w05", "toWord": "w08", "text": "Keep the edit\nconnected.", "position": "center", "fontSize": 56 },
+        { "fromWord": "w09", "toWord": "w12", "text": "Try another\npossibility.", "position": "center", "fontSize": 56 }
+      ]
+    }
+  },
+  {
+    "id": "new-palette",
+    "patch": {
+      "title": "Only the middle scene changes",
+      "clips": [
+        { "id": "idea", "kind": "color", "color": "#142036", "duration": 2 },
+        { "id": "edit", "kind": "color", "color": "#59391B", "duration": 2 },
+        { "id": "ship", "kind": "color", "color": "#4D2440", "duration": 2 }
+      ]
+    }
+  }
+]

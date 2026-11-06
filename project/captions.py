@@ -135,9 +135,9 @@ def lines(runs: list[dict], fps: float, max_chars: int) -> list[dict]:
 
 
 def page(found: list[dict], width: int, height: int, fps: float,
-         kit: dict = hyperframes.BRAND) -> tuple[str, list[int]]:
+         kit: dict = hyperframes.BRAND, at: float | None = None) -> tuple[str, list[int]]:
     """One composition showing every line back to back, in the brand kit's style, and the
-    frame each line starts at in it."""
+    frame each line starts at in it. `at` puts the lines' middle that far down the frame instead."""
     rows, offsets, offset = [], [], 0
     for line in found:
         offsets.append(offset)
@@ -153,15 +153,15 @@ def page(found: list[dict], width: int, height: int, fps: float,
         lines=json.dumps(rows, ensure_ascii=False).replace("</", "<\\/"), highlight=kit["accent"],
         text=kit["text"], font_face=font_face, family=family, outline=hyperframes.contrast(kit["text"]),
         # Portrait: above the app's buttons and text at the bottom of a reel.
-        y=round(height * (0.68 if portrait else 0.84)), max_w=round(width * 0.86),
+        y=round(height * (at if at is not None else 0.68 if portrait else 0.84)), max_w=round(width * 0.86),
         size=round((84 if portrait else 72) * unit), stroke=round(10 * unit), shadow=round(6 * unit),
         blur=round(14 * unit), gap=round(8 * unit))
     return html, offsets
 
 
-def add(ir: dict, runs: list[dict], folder: Path) -> int:
-    """Render captions for these runs onto the Captions track. Changes `ir` in place;
-    returns how many lines there are."""
+def add(ir: dict, runs: list[dict], folder: Path, at: float | None = None) -> int:
+    """Render captions for these runs onto the Captions track, `at` that far down the frame if
+    given. Changes `ir` in place; returns how many lines there are."""
     project = ir["project"]
     fps, width, height = project["fps"], project["width"], project["height"]
     # What fits on one line at the font size page() picks, measured in Arial Black capitals.
@@ -169,7 +169,7 @@ def add(ir: dict, runs: list[dict], folder: Path) -> int:
     if not found:
         return 0
     kit = hyperframes.brand()
-    html, offsets = page(found, width, height, fps, kit)
+    html, offsets = page(found, width, height, fps, kit, at)
     composition = folder / hyperframes.GRAPHICS_DIR / "captions" / hashlib.sha256(html.encode()).hexdigest()[:16]
     composition.mkdir(parents=True, exist_ok=True)
     (composition / "index.html").write_text(html, encoding="utf-8")

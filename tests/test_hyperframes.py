@@ -60,6 +60,26 @@ class TestCard(unittest.TestCase):
         self.assertEqual((clip["source_in"], clip["source_out"]), (0.0, 2.0))
 
 
+class TestOverlay(unittest.TestCase):
+    def test_an_overlay_is_copied_with_the_videos_length_and_its_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "board"
+            source.mkdir()
+            (source / "index.html").write_text('<div id="root" data-composition-id="main" data-duration="1">'
+                                               '<div class="clip" data-duration="5"></div></div>', encoding="utf-8")
+            (source / "face.png").write_bytes(b"png")
+            data = {"split": 0.6, "moments": {"turn": 8.7}}
+            copy = hyperframes.overlay(source, Path(tmp), 21.6, data)
+            page = (copy / "index.html").read_text(encoding="utf-8")
+            self.assertEqual(page.count('data-duration="21.6"'), 2)      # every layer lasts the whole video
+            self.assertEqual((copy / "face.png").read_bytes(), b"png")    # its own files go with it
+            script = (copy / "frameflow.js").read_text(encoding="utf-8")
+            self.assertEqual(json.loads(script.removeprefix("window.FRAMEFLOW = ").rstrip().removesuffix(";")),
+                             {"duration": 21.6, "split": 0.6, "moments": {"turn": 8.7}})
+            self.assertEqual(hyperframes.overlay(source, Path(tmp), 21.6, data), copy)    # made once
+            self.assertNotEqual(hyperframes.overlay(source, Path(tmp), 20.0, data), copy)
+
+
 class TestBrandKit(unittest.TestCase):
     def kit(self, folder: Path, **fields):
         (folder / "brand.json").write_text(json.dumps(fields), encoding="utf-8")

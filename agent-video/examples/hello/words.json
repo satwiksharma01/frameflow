@@ -1,0 +1,14 @@
+[
+  { "id": "w01", "text": "Make", "start": 0.2, "end": 0.45 },
+  { "id": "w02", "text": "the", "start": 0.5, "end": 0.65 },
+  { "id": "w03", "text": "idea", "start": 0.75, "end": 1.05 },
+  { "id": "w04", "text": "visible.", "start": 1.1, "end": 1.6 },
+  { "id": "w05", "text": "Keep", "start": 2.15, "end": 2.4 },
+  { "id": "w06", "text": "every", "start": 2.45, "end": 2.7 },
+  { "id": "w07", "text": "choice", "start": 2.8, "end": 3.1 },
+  { "id": "w08", "text": "editable.", "start": 3.15, "end": 3.65 },
+  { "id": "w09", "text": "Make", "start": 4.15, "end": 4.4 },
+  { "id": "w10", "text": "another", "start": 4.5, "end": 4.85 },
+  { "id": "w11", "text": "cut", "start": 4.9, "end": 5.2 },
+  { "id": "w12", "text": "today.", "start": 5.3, "end": 5.75 }
+]

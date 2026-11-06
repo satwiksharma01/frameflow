@@ -111,6 +111,11 @@ class TestThroughTheCut(unittest.TestCase):
         self.assertIn("px #FFFFFF;", html)          # dark text gets a light outline, to read over dark footage
         self.assertIn("px #000000;", captions.page([line], 1080, 1920, 30)[0])
 
+    def test_captions_can_sit_on_the_line_an_overlay_splits_the_frame_at(self):
+        line = {"start": 0, "end": 30, "words": [(0, "Hello")]}
+        self.assertIn("top:1306px", captions.page([line], 1080, 1920, 30)[0])            # 68% down a reel
+        self.assertIn("top:1152px", captions.page([line], 1080, 1920, 30, at=0.6)[0])
+
     def test_text_cannot_end_the_script(self):
         line = {"start": 0, "end": 30, "words": [(0, "</script><b>")]}
         html, _ = captions.page([line], 1080, 1920, 30)

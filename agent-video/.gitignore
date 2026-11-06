@@ -1,0 +1,8 @@
+node_modules/
+output/
+.agent-video/
+*.tgz
+.env
+*.log
+examples/hello/second.json
+examples/hello/timed.json
