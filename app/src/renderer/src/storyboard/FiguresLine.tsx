@@ -11,7 +11,7 @@ export function FiguresLine({ figures }: { figures: Figures }): React.JSX.Elemen
     <div
       role="group"
       aria-label="Length"
-      className="flex items-baseline gap-7 text-[40px] font-bold leading-none tracking-[-0.03em]"
+      className="flex items-baseline gap-7 text-[40px] font-bold leading-none tracking-[-0.03em] tabular-nums"
     >
       <div>
         {figures.scenes}

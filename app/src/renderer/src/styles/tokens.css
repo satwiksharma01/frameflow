@@ -19,7 +19,7 @@
 }
 
 @theme inline {
-  --font-sans: 'Schibsted Grotesk Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
 
   --color-ground: var(--ground);
   --color-ink: var(--ink);
@@ -93,9 +93,9 @@
     scrollbar-color: var(--line) transparent;
   }
 
-  /* Times. Schibsted Grotesk's tabular figures also widen the point and the colon ("1 . 3 s"), so times
-     keep proportional figures until a face is chosen whose tabular figures leave punctuation alone. */
+  /* Times, in tabular figures so they line up in columns; Inter's keep the point and the colon narrow. */
   .time {
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.01em;
   }
 

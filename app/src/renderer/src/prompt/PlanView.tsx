@@ -164,7 +164,7 @@ export function Figures({
       <div
         role="group"
         aria-label="The plan in figures"
-        className="flex items-baseline gap-[34px] text-[40px] font-bold leading-none tracking-[-0.03em]"
+        className="flex items-baseline gap-[34px] text-[40px] font-bold leading-none tracking-[-0.03em] tabular-nums"
       >
         <div>
           {plan && onEdit ? (
