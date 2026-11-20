@@ -1,0 +1,111 @@
+/* Frameflow's design tokens. Every colour, radius and face in the app comes from here. */
+
+:root {
+  /* Colour. Red has two jobs only: the selected scene and something to check. */
+  --ground: #0e0e0e;
+  --ink: #f2f2f0;
+  --quiet: #8a8a88; /* secondary text: 5.6:1 on the ground */
+  --faint: #6e6e6c; /* the target a length is measured against, in large figures (3.8:1), and the words
+                       of a control that is off */
+  --line: #262626;
+  --dim: #3a3a3a; /* the video screen's rules still ahead, the edge of a control that is off, of a failed
+                     build's words and the OpenShot note, and of a second button beside the main one */
+  --plain: #1a1a1a; /* a frame with no picture, a pressed control */
+  --off: #2a2a2a; /* the fill of a main action that is off, its words quiet */
+  --signal: #e30613;
+  --signal-ink: #ff4a52; /* red as text on the ground: 5.3:1, where #e30613 is 3.9:1 */
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Schibsted Grotesk Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+
+  --color-ground: var(--ground);
+  --color-ink: var(--ink);
+  --color-quiet: var(--quiet);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-dim: var(--dim);
+  --color-plain: var(--plain);
+  --color-off: var(--off);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+
+  /* The radius scale: tags, controls and scene frames, the main action, toasts and the large frame. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* shadcn/ui's roles, drawn from the same five colours. */
+  --color-background: var(--ground);
+  --color-foreground: var(--ink);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--ground);
+  --color-secondary: var(--plain);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--plain);
+  --color-muted-foreground: var(--quiet);
+  --color-accent: var(--plain);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--signal);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--ink);
+}
+
+@layer base {
+  * {
+    corner-shape: squircle; /* continuous corners; a plain radius where the engine has none */
+    border-color: var(--line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  ::selection {
+    background: var(--signal);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+
+  /* Times. Schibsted Grotesk's tabular figures also widen the point and the colon ("1 . 3 s"), so times
+     keep proportional figures until a face is chosen whose tabular figures leave punctuation alone. */
+  .time {
+    letter-spacing: 0.01em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important; /* a looping spinner at 1 ms would strobe */
+      transition-duration: 1ms !important;
+    }
+  }
+}

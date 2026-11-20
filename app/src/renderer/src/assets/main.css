@@ -1,0 +1,4 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/schibsted-grotesk';
+@import '../styles/tokens.css';

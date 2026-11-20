@@ -28,3 +28,12 @@ brand/
 
 # Transcription engine fetched by python -m project.transcribe --install
 tools/
+
+# Copies of the skills that the Claude app's skill sync makes for other agents
+.agents/
+
+# The design brief and sketches stay on this PC - the repository is public (Satwik, 2026-11-19)
+.impeccable/
+
+# The product facts stay on this PC - the repository is public (Satwik, 2026-11-19)
+PRODUCT.md
