@@ -98,6 +98,20 @@ class TestStoryboardChecks(unittest.TestCase):
         validate(board, "storyboard")
         self.assertEqual(produce.check_storyboard(board, self.INPUTS), ["overlay C:/nowhere/board has no index.html"])
 
+    def test_sections_start_at_scene_one_and_rise(self):
+        title = {"visual": {"type": "title", "text": "Hi"}, "duration": 2, "reason": "r"}
+
+        def problems(sections):
+            board = self.board(title, title, title, sections=sections)
+            validate(board, "storyboard")
+            return produce.check_storyboard(board, self.INPUTS)
+        self.assertEqual(problems([{"title": "Problem", "from": 1}, {"title": "Answer", "from": 3}]), [])
+        self.assertIn("sections: the first starts at scene 1", problems([{"title": "Problem", "from": 2}]))
+        self.assertIn("sections: each starts after the one before",
+                      problems([{"title": "A", "from": 1}, {"title": "B", "from": 1}]))
+        self.assertIn("sections: B starts at scene 9, but there are 3",
+                      problems([{"title": "A", "from": 1}, {"title": "B", "from": 9}]))
+
     def test_only_a_product_card_has_a_price(self):
         def scene(card):
             return self.board({"visual": {"type": "asset", "path": "shot.png"}, "duration": 2, "reason": "r",
@@ -308,7 +322,8 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertTrue((self.folder / "f" / "framing-1080x1920.json").exists())
 
     def _spans(self, pauses, *spans):
-        """The main track's (in, out) for footage scenes of the given spans, the recording's pauses as given."""
+        """The main track's (in, out) for footage scenes of the given spans, the recording's pauses as given.
+        The IR built is kept as self.ir."""
         (self.folder / "f").mkdir()
         (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [], "pauses": pauses}))
         inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
@@ -316,7 +331,7 @@ class TestBuildingTheProject(unittest.TestCase):
         board = {"script": "s", "scenes": [
             {"visual": {"type": "footage", "source": FOOTAGE.name, "start": a, "end": b}, "reason": "r"}
             for a, b in spans]}
-        ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
+        self.ir = ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs)
         return [(round(c["source_in"], 6), round(c["source_out"], 6)) for c in ir["tracks"][0]["clips"]]
 
     def test_a_heard_cut_leaves_the_last_word_room_in_its_pause(self):
@@ -330,8 +345,8 @@ class TestBuildingTheProject(unittest.TestCase):
     def test_a_cut_the_next_scene_carries_on_from_stays(self):
         if not FOOTAGE.exists():
             self.skipTest("media not present")
-        # Split at 1.6 s, the recording plays straight on: there is no cut to move.
-        self.assertEqual(self._spans([{"start": 1.55, "end": 2.4}], (1.0, 1.6), (1.6, 3.0)),
+        # Split at 1.6 s in a pause under LONG_PAUSE_SECONDS, the recording plays straight on: there is no cut to move.
+        self.assertEqual(self._spans([{"start": 1.55, "end": 2.2}], (1.0, 1.6), (1.6, 3.0)),
                          [(1.0, 1.6), (1.6, 3.0)])
 
     def test_a_cut_never_plays_its_pause_backwards(self):
@@ -340,6 +355,59 @@ class TestBuildingTheProject(unittest.TestCase):
         # In a 0.2 s pause the next scene starts at 1.7 s, before where the cut would go: it plays straight on.
         self.assertEqual(self._spans([{"start": 1.55, "end": 1.75}], (1.0, 1.6), (1.7, 3.0)),
                          [(1.0, 1.7), (1.7, 3.0)])
+
+    def test_a_long_pause_inside_a_heard_scene_is_cut(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        pieces = self._spans([{"start": 3.0, "end": 5.0}], (1.0, 7.0))
+        self.assertEqual(len(pieces), 2, pieces)
+        (in1, out1), (in2, out2) = pieces
+        # Cut down to a quarter second of breath either side, as first-cut leaves.
+        self.assertEqual(in1, 1.0)
+        self.assertAlmostEqual(out1, 3.25, delta=1 / 30)
+        self.assertAlmostEqual(in2, 4.75, delta=1 / 30)
+        self.assertEqual(out2, 7.0)
+        first, second = self.ir["tracks"][0]["clips"]
+        self.assertAlmostEqual(second["timeline_start"], first["timeline_start"] + first["timeline_duration"],
+                               places=6)
+
+    def test_two_heard_scenes_meeting_in_a_long_pause_leave_half_a_second_of_it(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        # The scenes meet at 5.0 s in a 2 s pause: each keeps a quarter second of it, as a cut inside one would.
+        (in1, out1), (in2, out2) = self._spans([{"start": 4.0, "end": 6.0}], (1.0, 5.0), (5.0, 9.0))
+        self.assertEqual((in1, out2), (1.0, 9.0))
+        self.assertAlmostEqual(out1, 4.25, delta=1 / 30)
+        self.assertAlmostEqual(in2, 5.75, delta=1 / 30)
+
+    def test_a_trimmed_scene_keeps_one_span_and_its_words_on_the_new_timeline(self):
+        if not FOOTAGE.exists():
+            self.skipTest("media not present")
+        (self.folder / "f").mkdir()
+        (self.folder / "f" / "timing.json").write_text(json.dumps({"words": [
+            {"start": 1.2, "end": 1.6, "text": " one"}, {"start": 5.2, "end": 5.6, "text": " two"}],
+            "pauses": [{"start": 3.0, "end": 5.0}]}))
+        inputs = {"footage": [{"name": FOOTAGE.name, "source": FOOTAGE.as_posix(), "duration": 25.7,
+                               "folder": "f"}], "assets": [], "music": []}
+        board = {"script": "s", "spoken_captions": True, "scenes": [
+            {"visual": {"type": "footage", "source": FOOTAGE.name, "start": 1.0, "end": 7.0}, "reason": "r",
+             "cards": [{"kind": "lower_third", "text": "Two", "when": "two"}]}]}
+        spans = []
+        with mock.patch.object(produce.captions, "add", return_value=0) as add, \
+                contextlib.redirect_stdout(io.StringIO()):
+            ir = produce.build_ir(self.folder, board, dict(BRIEF, aspect="16:9"), inputs, spans)
+        clips = ir["tracks"][0]["clips"]
+        self.assertEqual(len(clips), 2, clips)
+        first, second = clips
+        cut = second["source_in"] - first["source_out"]
+        self.assertEqual(len(spans), 1)
+        self.assertAlmostEqual(spans[0]["end"] - spans[0]["start"],     # each clip's length is rounded on its own
+                               first["timeline_duration"] + second["timeline_duration"], places=5)
+        card = next(t for t in ir["tracks"] if t["id"] == "Graphics")["clips"][0]
+        self.assertAlmostEqual(card["timeline_start"], 5.2 - cut - 1.0, delta=1 / 30)     # "two", heard sooner
+        runs = add.call_args.args[1]
+        self.assertEqual([[w["text"] for w in r["words"]] for r in runs], [[" one"], [" two"]])    # a run per piece
+        self.assertEqual([r["start"] for r in runs], [c["timeline_start"] for c in clips])
 
     def _overlay(self, **extra):
         page = self.folder / "board"
@@ -438,6 +506,30 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertIn("==> Listening to every cut\n"
                       "    2 of 3 joins sound clean\n"
                       "    ! join 2 at 0:04.00: expected ...' done.' | ''... but heard 'it is all'\n", out)
+        report = json.loads((self.folder / produce.REPORT_FILE).read_text())
+        self.assertEqual(report["joins"], {"checked": 3, "suspect": [
+            {"at": 4.0, "before": " done.", "after": "", "heard": "it is all"}]})
+        self.assertEqual(len(report["scenes"]), 5)
+        self.assertEqual(report["scenes"][1], {"start": 2.0, "end": 4.0})
+        self.assertEqual((report["seconds"], report["target_seconds"]), (9.0, 15))
+        self.assertEqual(report["picture"], {"skipped": "OpenShot is not installed"})
+        self.assertEqual(report["of"], produce.source_digest(self.folder))
+
+    def test_a_build_that_fails_while_writing_the_project_leaves_no_older_report(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        self._built(inputs, board)
+        self.assertTrue((self.folder / produce.REPORT_FILE).exists())
+
+        def fails(ir, out):
+            raise RuntimeError("the editor could not write the project")
+        editor = dataclasses.replace(produce.EDITORS[produce.DEFAULT], compile_file=fails)
+        with mock.patch.dict(produce.EDITORS, {produce.DEFAULT: editor}), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+            produce.build(self.folder)
+        self.assertFalse((self.folder / produce.REPORT_FILE).exists())     # it described the project now half replaced
 
     def test_a_build_with_no_recording_heard_does_not_listen(self):
         inputs = {"footage": [], "music": [],
@@ -445,6 +537,133 @@ class TestBuildingTheProject(unittest.TestCase):
         board = {"script": "s", "scenes": [
             {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
         self.assertNotIn("Listening", self._built(inputs, board))
+        self.assertIsNone(json.loads((self.folder / produce.REPORT_FILE).read_text())["joins"])
+
+    def test_a_build_records_its_preview(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        sizes = []
+
+        def render(project, out, width, height):
+            sizes.append((width, height))
+            out.write_bytes(b"mp4")
+            return out
+        with mock.patch.object(produce.preview, "render", render):
+            out = self._built(inputs, board)
+        self.assertIn("==> Making a preview to watch in the app\n", out)
+        self.assertEqual(sizes, [(960, 540)])          # the 16:9 project's 1920x1080, at 540 on its shorter side
+        self.assertEqual(json.loads((self.folder / produce.REPORT_FILE).read_text())["preview"],
+                         "Nomad-reel-preview.mp4")
+
+    def test_a_build_without_openshot_says_the_preview_was_skipped(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        self.assertIn("==> Making a preview to watch in the app\n    skipped: OpenShot is not installed\n",
+                      self._built(inputs, board))
+        self.assertEqual(json.loads((self.folder / produce.REPORT_FILE).read_text())["preview"],
+                         {"skipped": "OpenShot is not installed"})
+
+    def test_the_report_is_written_before_the_preview_is_made(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        seen = []
+
+        def render(project, out, width, height):
+            seen.append(json.loads((self.folder / produce.REPORT_FILE).read_text()))
+            out.write_bytes(b"mp4")
+            return out
+        with mock.patch.object(produce.preview, "render", render):
+            self._built(inputs, board)
+        self.assertIn("joins", seen[0])
+        self.assertEqual(seen[0]["picture"], {"skipped": "OpenShot is not installed"})
+        self.assertNotIn("preview", seen[0])
+        report = json.loads((self.folder / produce.REPORT_FILE).read_text())
+        self.assertEqual(report, dict(seen[0], preview="Nomad-reel-preview.mp4"))
+
+    def test_a_preview_that_fails_leaves_the_report_and_says_it_was_skipped(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        seen = []
+
+        def render(project, out, width, height):
+            seen.append(json.loads((self.folder / produce.REPORT_FILE).read_text()))
+            raise produce.preview.PreviewError("OpenShot could not render the preview: out of memory")
+        with mock.patch.object(produce.preview, "render", render):
+            out = self._built(inputs, board)
+        self.assertIn("==> Making a preview to watch in the app\n"
+                      "    skipped: OpenShot could not render the preview: out of memory\n", out)
+        report = json.loads((self.folder / produce.REPORT_FILE).read_text())
+        self.assertEqual(report, dict(seen[0], preview={
+            "skipped": "OpenShot could not render the preview: out of memory"}))
+
+    def test_a_new_build_removes_the_old_preview_first(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        self._built(inputs, board)
+        old = produce.preview_path(self.folder, BRIEF)
+        old.write_bytes(b"an older video's preview")
+
+        def fails(ir, out):
+            raise RuntimeError("the editor could not write the project")
+        editor = dataclasses.replace(produce.EDITORS[produce.DEFAULT], compile_file=fails)
+        with mock.patch.dict(produce.EDITORS, {produce.DEFAULT: editor}), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+            produce.build(self.folder)
+        self.assertEqual(old, self.folder / "Nomad-reel-preview.mp4")
+        self.assertFalse(old.exists())
+
+    def test_build_ir_fills_each_scenes_span(self):
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r"},
+            {"visual": {"type": "title", "text": "Next"}, "narration": "Meet it", "reason": "r"}]}
+        spans = []
+        ir = produce.build_ir(self.folder, board, BRIEF, {"footage": [], "assets": [], "music": []}, spans)
+        self.assertEqual([s["start"] for s in spans], [0, 2.0])
+        self.assertEqual(spans[0]["end"], 2.0)
+        # The second scene lasts as long as its narration and the breath after it: to the end of the video.
+        self.assertEqual(spans[1]["end"], max(c["timeline_start"] + c["timeline_duration"]
+                                              for t in ir["tracks"] for c in t["clips"]))
+
+    def test_a_picture_problem_in_the_report_has_its_second(self):
+        self.assertEqual(produce._picture_problem('0:07.00: the graphic "Tip 1" covers 30% of a face'),
+                         {"at": 7.0, "what": 'the graphic "Tip 1" covers 30% of a face'})
+        self.assertEqual(produce._picture_problem("1:02.50: black"), {"at": 62.5, "what": "black"})
+        self.assertEqual(produce._picture_problem("something without a clock"),
+                         {"at": None, "what": "something without a clock"})
+
+    def test_check_buildable_gives_the_builds_refusals_and_renders_nothing(self):
+        scene = {"visual": {"type": "asset", "path": "shot.png"}, "narration": "Meet the Nomad", "reason": "r"}
+        page = self.folder / "board"            # an overlay whose files are not written yet
+        good = {"script": "s", "spoken_captions": True, "overlay": {"path": page.as_posix()}, "scenes": [
+            scene, {"visual": {"type": "generated", "kind": "picture", "prompt": "a pack"}, "duration": 2.0,
+                    "reason": "r"}]}
+        bad = {"script": "s", "scenes": [
+            dict(scene, cards=[{"kind": "product", "text": "Nomad", "when": "passport"}])]}
+        inputs = self._image()
+        with mock.patch.object(produce.voiceover, "speak", self._said), \
+                mock.patch.object(produce, "still_to_clip") as still, \
+                mock.patch.object(produce.hyperframes, "render") as render:
+            self.assertEqual(produce.check_buildable(self.folder, good, BRIEF, inputs), [])
+            problems = produce.check_buildable(self.folder, bad, BRIEF, inputs)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith("'passport' is not said in scene 1"), problems)
+        still.assert_not_called()
+        render.assert_not_called()
+        self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ["shot.png", "voice"])    # the voice is kept
+
+    def test_check_buildable_keeps_a_refusal_of_one_line(self):
+        with mock.patch.object(produce, "build_ir", side_effect=produce.ProduceError("The music file is gone.")):
+            self.assertEqual(produce.check_buildable(self.folder, {}, BRIEF, {}), ["The music file is gone."])
 
     def _built(self, inputs: dict, board: dict, heard: dict | None = None) -> str:
         """What a build prints, OpenShot and Whisper stood in for: the project is not written, and what is
@@ -566,6 +785,15 @@ class TestRequests(unittest.TestCase):
             inputs = json.loads((folder / "out" / produce.INPUTS_FILE).read_text(encoding="utf-8"))
         self.assertEqual(inputs["looks"], [{"path": (folder / "warm.cube").resolve().as_posix()}])
 
+    def test_a_needed_fact_in_the_open_questions_is_marked(self):
+        inputs = {"prompt": "p", "script": None, "footage": [], "assets": [], "music": []}
+        cannot, can = (produce.brief_request(Path("C:/v"), inputs, can_search=search) for search in (False, True))
+        self.assertIn("put each needed fact in `open_questions` instead, as an entry that begins `Needed fact: `",
+                      cannot)
+        for request in (cannot, can):       # any thinker may not find one
+            self.assertIn("a fact you cannot find stays out, or goes in `open_questions` as an entry that begins "
+                          "`Needed fact: `", request)
+
     def test_open_questions_stop_the_storyboard(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
@@ -591,6 +819,28 @@ class TestRequests(unittest.TestCase):
                 plain = produce.storyboard_request(folder).read_text(encoding="utf-8")
         self.assertIn("#FF3366", request)
         self.assertNotIn("the creator's brand kit", plain)
+
+    def _request_for(self, target_seconds):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / produce.INPUTS_FILE).write_text('{"prompt": "p", "script": null, "footage": [], '
+                                                      '"assets": [], "music": []}', encoding="utf-8")
+            (folder / produce.BRIEF_FILE).write_text(json.dumps(dict(BRIEF, target_seconds=target_seconds)),
+                                                     encoding="utf-8")
+            return produce.storyboard_request(folder).read_text(encoding="utf-8")
+
+    def test_a_long_video_asks_for_about_30_longer_scenes(self):
+        self.assertIn("about 30 scenes at most, about 30s each", self._request_for(900))
+
+    def test_a_five_minute_video_asks_for_ten_second_scenes(self):
+        self.assertIn("about 10s each", self._request_for(300))
+
+    def test_a_short_video_keeps_its_quick_cuts(self):
+        for seconds in (20, 90):
+            self.assertNotIn("scenes at most", self._request_for(seconds))
+
+    def test_scene_seconds(self):
+        self.assertEqual([produce.scene_seconds(t) for t in (20, 90, 300, 900)], [None, None, 10.0, 30.0])
 
 
 if __name__ == "__main__":

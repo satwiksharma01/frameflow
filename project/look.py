@@ -147,14 +147,16 @@ def check(project: Path | str, ir: dict) -> tuple[list[str], int]:
     return problems, len(jobs)
 
 
-def report(project: Path | str, ir: dict) -> None:
-    """Look at a project just built and say what is wrong, as a build's step."""
+def report(project: Path | str, ir: dict) -> dict:
+    """Look at a project just built and say what is wrong, as a build's step. What it printed, for the
+    build's report: how many frames were looked at and the problems, or why it was skipped."""
     print("==> Looking at the picture", flush=True)
     try:
         problems, looked = check(project, ir)
     except LookError as e:
         print(f"    skipped: {e}")
-        return
+        return {"skipped": str(e)}
     print(f"    {looked} frames looked at" + ("; nothing wrong" if not problems else ""))
     for problem in problems:
         print(f"    ! {problem}")
+    return {"looked": looked, "problems": problems}

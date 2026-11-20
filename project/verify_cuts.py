@@ -22,7 +22,6 @@ mixes the main track at the timings read back from the .osp, which catches a
 cut placed mid-word but not anything OpenShot adds at a clip boundary.
 """
 import difflib
-import re
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -30,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from project import openshot_build
+from project.cutpoints import tokenize  # noqa: F401  (kept here too: its callers import it from this module)
 from project.engine_check import find_melt
 from project.media import _find_tool
 from project.parse_osp import parse_osp
@@ -65,10 +65,6 @@ class JoinCheck:
             return f"join {self.index} at {where}: ok"
         return (f"join {self.index} at {where}: expected "
                 f"...{self.expected_before!r} | {self.expected_after!r}... but heard {self.heard!r}")
-
-
-def tokenize(text: str) -> list[str]:
-    return [w for w in re.findall(r"[a-z0-9']+", text.lower()) if w]
 
 
 def word_survived(word: str, heard_tokens: list[str]) -> bool:

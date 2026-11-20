@@ -8,6 +8,7 @@ Run with: python -m unittest discover tests
 """
 import unittest
 
+from project import cutpoints
 from project.cutpoints import PAD_SECONDS, find_pause, frame_align, snap_plan
 from project.verify_cuts import tokenize, word_survived, words_at_boundary
 
@@ -28,6 +29,49 @@ def plan(*boundaries, duration=30.0):
     }
 
 
+WORDS = [{"start": 1.0, "end": 1.3, "text": " Hello"}, {"start": 1.5, "end": 1.9, "text": " there."},
+         {"start": 2.6, "end": 2.7, "text": " The"}, {"start": 2.7, "end": 3.0, "text": " goal"},
+         {"start": 3.0, "end": 3.2, "text": " is"}, {"start": 10.0, "end": 10.1, "text": " the"},
+         {"start": 10.1, "end": 10.4, "text": " goal"}]
+PAUSES = [{"start": 0.0, "end": 1.0}, {"start": 1.9, "end": 2.6}, {"start": 3.2, "end": 3.9},
+          {"start": 9.4, "end": 10.0}, {"start": 10.4, "end": 11.0}]
+
+
+class TestSpanOf(unittest.TestCase):
+    """Where words a creator types are said in their recording, cut in the pauses around them."""
+
+    def test_a_phrase_is_cut_in_the_pauses_around_it(self):
+        start, end = cutpoints.span_of(WORDS, PAUSES, "The goal, is", 30)
+        self.assertTrue(2.3 <= start <= 2.4, start)          # breathing in, a quarter second before "The"
+        self.assertTrue(3.4 <= end <= 3.5, end)              # a quarter second after "is"
+
+    def test_case_and_punctuation_are_ignored(self):
+        self.assertEqual(cutpoints.span_of(WORDS, PAUSES, "the GOAL is!", 30),
+                         cutpoints.span_of(WORDS, PAUSES, "The goal, is", 30))
+
+    def test_of_two_places_the_one_nearest_the_scene_wins(self):
+        self.assertTrue(2.3 <= cutpoints.span_of(WORDS, PAUSES, "the goal", 30)[0] <= 2.4)
+        start, end = cutpoints.span_of(WORDS, PAUSES, "the goal", 30, near=9.0)
+        self.assertTrue(9.7 <= start <= 9.8 and 10.6 <= end <= 10.7, (start, end))
+
+    def test_words_not_said_give_none(self):
+        self.assertIsNone(cutpoints.span_of(WORDS, PAUSES, "goodbye", 30))
+        self.assertIsNone(cutpoints.span_of(WORDS, PAUSES, "goal the", 30))      # said, but not in that order
+
+    def test_a_phrase_with_nothing_to_search_for_is_refused_not_found_everywhere(self):
+        for phrase in ("", "  ...  ", "\u0928\u092e\u0938\u094d\u0924\u0947"):        # the last is Hindi
+            with self.assertRaises(ValueError):
+                cutpoints.span_of(WORDS, PAUSES, phrase, 30)
+
+    def test_without_a_pause_the_cut_falls_between_the_words(self):
+        start, end = cutpoints.span_of(WORDS, [], "goal", 30)
+        self.assertAlmostEqual(start, 2.7, places=1)          # "The" ends where "goal" begins
+        self.assertAlmostEqual(end, 3.0, places=1)
+
+    def test_the_end_of_a_recording_caps_the_last_words(self):
+        self.assertAlmostEqual(cutpoints.span_of(WORDS, [], "the goal", 30, near=9.0, length=10.5)[1], 10.5, places=1)
+
+
 class TestFindPause(unittest.TestCase):
     PAUSES = [{"start": 2.0, "end": 3.0}, {"start": 10.0, "end": 10.2}, {"start": 20.0, "end": 22.0}]
 
@@ -43,6 +87,48 @@ class TestFindPause(unittest.TestCase):
     def test_ties_prefer_the_longer_pause(self):
         pauses = [{"start": 4.9, "end": 5.0}, {"start": 5.5, "end": 6.5}]
         self.assertEqual(find_pause(pauses, 5.25, window=1.0), pauses[1])
+
+
+class TestKeptPieces(unittest.TestCase):
+    """The stretches of a scene that play once its long pauses are cut, at 20 fps so quarter-seconds fall on frames."""
+
+    def test_a_span_with_no_long_pause_is_one_piece(self):
+        self.assertEqual(cutpoints.kept_pieces(1.0, 7.0, [{"start": 3.0, "end": 3.6}], 20), [(1.0, 7.0)])
+
+    def test_a_long_pause_inside_is_cut_to_the_breath_either_side(self):
+        self.assertEqual(cutpoints.kept_pieces(1.0, 7.0, [{"start": 3.0, "end": 5.0}], 20), [(1.0, 3.25), (4.75, 7.0)])
+
+    def test_a_pause_over_the_span_s_edge_is_left_to_the_span(self):
+        self.assertEqual(cutpoints.kept_pieces(1.0, 7.0, [{"start": 0.5, "end": 2.0}, {"start": 6.0, "end": 8.0}], 20),
+                         [(1.0, 7.0)])
+
+    def test_two_long_pauses_a_word_apart_keep_the_word(self):
+        pieces = cutpoints.kept_pieces(0.0, 6.0, [{"start": 1.0, "end": 2.5}, {"start": 2.8, "end": 4.0}], 20)
+        self.assertEqual(pieces, [(0.0, 1.25), (2.25, 3.05), (3.75, 6.0)])
+        self.assertTrue(all(b > a for a, b in pieces), pieces)
+
+
+class TestTrimEdges(unittest.TestCase):
+    """A long pause at a scene's edge is cut where a cut inside the scene would stop or resume, at 20 fps."""
+
+    def test_a_span_starting_inside_a_long_pause_starts_a_breath_before_the_words(self):
+        self.assertEqual(cutpoints.trim_edges(2.0, 7.0, [{"start": 1.0, "end": 3.0}], 20), (2.75, 7.0))
+
+    def test_a_span_ending_inside_a_long_pause_ends_a_breath_after_the_words(self):
+        self.assertEqual(cutpoints.trim_edges(1.0, 6.5, [{"start": 6.0, "end": 8.0}], 20), (1.0, 6.25))
+
+    def test_a_span_with_a_long_pause_at_both_edges_is_trimmed_at_both(self):
+        pauses = [{"start": 1.0, "end": 3.0}, {"start": 6.0, "end": 8.0}]
+        self.assertEqual(cutpoints.trim_edges(2.0, 6.5, pauses, 20), (2.75, 6.25))
+
+    def test_a_short_pause_at_an_edge_is_left_as_it_is(self):
+        pauses = [{"start": 1.8, "end": 2.4}, {"start": 6.8, "end": 7.3}]
+        self.assertEqual(cutpoints.trim_edges(2.0, 7.0, pauses, 20), (2.0, 7.0))
+
+    def test_a_span_inside_one_long_pause_is_never_emptied(self):
+        for start, end in [(1.5, 2.5), (1.1, 1.2), (2.8, 2.9)]:
+            a, b = cutpoints.trim_edges(start, end, [{"start": 1.0, "end": 3.0}], 20)
+            self.assertLess(a, b, (start, end))
 
 
 class TestSnapPlan(unittest.TestCase):

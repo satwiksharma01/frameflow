@@ -53,6 +53,21 @@
         "moments": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 }, "description": "Optional: named moments for the composition, each words said in the video, written as they are said there (\"boring work\"). FRAMEFLOW.moments gives the second each is first said." }
       }
     },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Optional: the video's chapters, for long videos, each with the number of its first scene. The first starts at scene 1. The build ignores them; they are for reading the storyboard.",
+      "items": {
+        "type": "object",
+        "required": ["title", "from"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "from": { "type": "integer", "minimum": 1, "description": "The number of the section's first scene, counting from 1." },
+          "confirmed": { "type": "boolean", "description": "true once the creator has renamed or kept a chapter the editor suggested." }
+        }
+      }
+    },
     "spoken_captions": {
       "type": "boolean",
       "description": "Optional: show what is said as captions that pop in word by word - the narration, or the speech in footage that has no narration. A scene with its own caption shows that instead. Usual for reels and shorts."

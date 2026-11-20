@@ -15,6 +15,7 @@ Two facts make this necessary rather than cosmetic:
     safe cut point at all. Those are reported rather than silently used: on a
     real recording an 80ms gap (2.4 frames at 30fps) could not be cut cleanly.
 """
+import re
 from dataclasses import dataclass
 
 # How far from the planned boundary to look for a pause. Wide enough to absorb
@@ -23,6 +24,9 @@ SEARCH_WINDOW_SECONDS = 0.6
 
 # Silence left on the speech side of a cut. Flush cuts sound panicked.
 PAD_SECONDS = 0.25
+
+# A pause inside a heard scene longer than this is cut down to PAD_SECONDS either side, so a long scene keeps its pace.
+LONG_PAUSE_SECONDS = 0.75
 
 
 @dataclass
@@ -40,6 +44,47 @@ class SnapNote:
 
 def frame_align(seconds: float, fps: float) -> float:
     return round(seconds * fps) / fps
+
+
+def tokenize(text: str) -> list[str]:
+    """The words of `text` as Frameflow compares them: lower case, punctuation gone."""
+    return [w for w in re.findall(r"[a-z0-9']+", text.lower()) if w]
+
+
+def span_of(words: list[dict], pauses: list[dict], phrase: str, fps: float, near: float | None = None,
+            length: float | None = None) -> tuple[float, float] | None:
+    """Where `phrase` is said in a recording (`words` and `pauses` are its timing), as a span whose edges sit in
+    the pauses around it: breathing in before the first word, and a quarter second after the last. Of several
+    places, the one whose first word starts nearest `near`. None when the phrase is not said."""
+    want = tokenize(phrase)
+    if not want:
+        raise ValueError(f"{phrase.strip()!r} has no words Frameflow can search for yet")
+    said = [(i, t) for i, w in enumerate(words) for t in tokenize(w["text"])]
+    runs = [(said[k][0], said[k + len(want) - 1][0]) for k in range(len(said) - len(want) + 1)
+            if [t for _, t in said[k:k + len(want)]] == want]
+    if not runs:
+        return None
+    first, last = min(runs, key=lambda run: abs(words[run[0]]["start"] - near)) if near is not None else runs[0]
+    begins, ends = words[first]["start"], words[last]["end"]
+    before = words[first - 1]["end"] if first > 0 else 0.0
+    after = words[last + 1]["start"] if last + 1 < len(words) else None
+
+    # The pause that ends where the first word begins, and the one that begins where the last word ends.
+    opening = [p for p in pauses if before - 1e-6 <= p["end"] <= begins + 1e-6]
+    closing = [p for p in pauses if ends - 1e-6 <= p["start"] <= (after if after is not None else float("inf")) + 1e-6]
+    if opening:
+        start = place_in_pause(max(opening, key=lambda p: p["end"]), "remove", "keep", fps)
+    else:
+        start = frame_align((before + begins) / 2, fps) if first > 0 else 0.0
+    if closing:
+        end = place_in_pause(min(closing, key=lambda p: p["start"]), "keep", "remove", fps)
+    elif after is not None:
+        end = frame_align((ends + after) / 2, fps)
+    else:
+        end = frame_align(ends + PAD_SECONDS, fps)
+    if length is not None:
+        end = min(end, length)
+    return start, end
 
 
 def find_pause(pauses: list[dict], t: float, window: float = SEARCH_WINDOW_SECONDS) -> dict | None:
@@ -79,6 +124,29 @@ def place_in_pause(pause: dict, before: str, after: str, fps: float) -> float:
     low, high = pause["start"] + frame, pause["end"] - frame
     return frame_align(min(max(target, low), high) if low <= high
                        else (pause["start"] + pause["end"]) / 2, fps)
+
+
+def kept_pieces(start: float, end: float, pauses: list[dict], fps: float) -> list[tuple[float, float]]:
+    """The stretches of [start, end] that play: each long pause wholly inside it is cut down to the breath
+    either side, as first-cut leaves one. A pause over an edge is the span's own business."""
+    pieces, at = [], start
+    for p in pauses:
+        if start < p["start"] and p["end"] < end and p["end"] - p["start"] > LONG_PAUSE_SECONDS:
+            pieces.append((at, place_in_pause(p, "keep", "remove", fps)))
+            at = place_in_pause(p, "remove", "keep", fps)
+    return pieces + [(at, end)]
+
+
+def trim_edges(start: float, end: float, pauses: list[dict], fps: float) -> tuple[float, float]:
+    """[start, end] with a long pause at either edge cut where a cut inside the span would resume or stop, a
+    breath from the words, whatever plays beside it. A span inside one pause is left whole rather than emptied."""
+    def long_at(t: float) -> dict | None:
+        return next((p for p in pauses if p["start"] <= t <= p["end"] and p["end"] - p["start"] > LONG_PAUSE_SECONDS),
+                    None)
+    first, last = long_at(start), long_at(end)
+    trimmed = (place_in_pause(first, "remove", "keep", fps) if first else start,
+               place_in_pause(last, "keep", "remove", fps) if last else end)
+    return trimmed if trimmed[0] < trimmed[1] else (start, end)
 
 
 def is_tight(pause: dict, fps: float) -> bool:

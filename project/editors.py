@@ -62,9 +62,10 @@ class Editor:
             print(f"    ! {e}")
         return False
 
-    def open(self, project: Path) -> None:
+    def open(self, project: Path) -> bool:
+        """Show the project in an open window of the editor, or launch it; False when it is not found."""
         if self._live(self.live_show, project, f"shown in the open {self.name} window"):
-            return
+            return True
         found = self.launcher() if self.launcher else None
         if found is None:
             candidates = [Path(r"C:\Program Files") / self.install_folder / self.executable]
@@ -74,8 +75,9 @@ class Editor:
             found = next((c for c in candidates if c.exists()), None)
         if found is None:
             print(f"    {self.name} not found; open {project} manually")
-            return
+            return False
         subprocess.Popen([str(found), str(project)], env=openshot_build.environment())
+        return True
 
 
 def _openshot_launcher() -> Path | None:

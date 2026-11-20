@@ -15,6 +15,9 @@ MAX_TOKENS = 64000
 _FALLBACK_MODELS = {"claude-opus-5", "claude-fable-5-1"}
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
+# Each pause is a server-side search loop of about 10 steps; past this many, the model is not converging.
+MAX_PAUSES = 5
+
 _PRE_BOUNDARY_DROP = {"thinking", "redacted_thinking", "tool_use"}
 
 
@@ -35,16 +38,17 @@ def _echoable(content: list) -> list:
 class AnthropicProvider:
     name = "anthropic"
 
-    def __init__(self, model: str | None = None, client=None):
+    def __init__(self, model: str | None = None, client=None, api_key: str | None = None):
         self.model = model or DEFAULT_MODEL
         if client is None:
             import anthropic
-            client = anthropic.Anthropic()
+            # An explicit key stops the SDK falling back to ANTHROPIC_AUTH_TOKEN.
+            client = anthropic.Anthropic(api_key=api_key)
         self.client = client
         self.served_by = None
 
     def submit(self, system: str, user: str, tool: ToolSpec, check: Checker,
-               max_attempts: int = 4) -> dict:
+               max_attempts: int = 4, web_search: bool = False) -> dict:
         tool_def = {
             "name": tool.name,
             "description": tool.description,
@@ -59,18 +63,25 @@ class AnthropicProvider:
             "system": system,
             "tools": [tool_def],
         }
+        if web_search:
+            # Anthropic's own search, run on its servers. Haiku takes only the basic version.
+            # ponytail: Opus and Sonnet before 4.6 need the basic one too; name them here if they are ever offered.
+            version = "web_search_20250305" if "haiku" in self.model else "web_search_20260209"
+            request["tools"].append({"type": version, "name": "web_search"})
         if self.model in _FALLBACK_MODELS:
             request["betas"] = [_FALLBACK_BETA]
             request["fallbacks"] = "default"
 
         messages = [{"role": "user", "content": user}]
-        for _ in range(max_attempts):
+        attempts = pauses = 0
+        while attempts < max_attempts:
             try:
                 with self.client.beta.messages.stream(messages=messages, **request) as stream:
                     response = stream.get_final_message()
             except ValueError:
                 # The SDK could not parse the streamed tool input at all. There
                 # is no tool_use id to answer, so re-issue the same request.
+                attempts += 1
                 continue
 
             self.served_by = response.model
@@ -85,6 +96,14 @@ class AnthropicProvider:
 
             content = _echoable(response.content)
             messages.append({"role": "assistant", "content": content})
+            if response.stop_reason == "pause_turn":
+                # A server tool (the web search) paused its own loop; sending the turn back resumes it.
+                # A resume is not an attempt, so searching costs no fix round, but it has its own cap.
+                pauses += 1
+                if pauses > MAX_PAUSES:
+                    raise ProviderError(f"{self.model} kept searching the web without answering")
+                continue
+            attempts += 1
             calls = [b for b in content if b.type == "tool_use" and b.name == tool.name]
             if not calls:
                 messages.append({"role": "user", "content": f"Submit the plan by calling {tool.name}."})

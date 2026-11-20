@@ -12,7 +12,8 @@ from project.providers import Checker, ProviderError, ToolSpec
 class OpenAICompatibleProvider:
     name = "openai"
 
-    def __init__(self, model: str | None = None, base_url: str | None = None, client=None):
+    def __init__(self, model: str | None = None, base_url: str | None = None, client=None,
+                 api_key: str | None = None):
         if not model:
             raise ProviderError(
                 "the openai provider needs a model: pass --model or set FRAMEFLOW_MODEL "
@@ -21,7 +22,8 @@ class OpenAICompatibleProvider:
         self.model = model
         if client is None:
             from openai import OpenAI
-            client = OpenAI(base_url=base_url) if base_url else OpenAI()
+            # None for either falls back to OPENAI_API_KEY and OPENAI_BASE_URL, as before.
+            client = OpenAI(api_key=api_key, base_url=base_url or None)
         self.client = client
         self.served_by = None
 

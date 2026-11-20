@@ -1,9 +1,12 @@
 """Looking at the result: black frames, captions off screen and graphics over a face."""
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -66,6 +69,20 @@ class TestWhereToLook(unittest.TestCase):
     def test_a_video_of_titles_alone_is_looked_at_where_the_main_track_is_empty(self):
         ir = _ir(("V1", "video", []), ("Graphics", "graphics", [_clip(0.0, 3.0, text="Frameflow")]))
         self.assertEqual([(lk.at, lk.kind) for lk in look.where(ir)], [(1.5, "black"), (1.5, "graphic")])
+
+
+class TestReport(unittest.TestCase):
+    def test_what_was_found_is_returned_as_well_as_printed(self):
+        with mock.patch.object(look, "check", lambda project, ir: (["0:01.00: black"], 3)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(look.report("p.osp", {}), {"looked": 3, "problems": ["0:01.00: black"]})
+        self.assertIn("    ! 0:01.00: black", out.getvalue())
+
+    def test_a_check_that_could_not_run_says_why(self):
+        def check(project, ir):
+            raise look.LookError("OpenShot is not installed")
+        with mock.patch.object(look, "check", check), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(look.report("p.osp", {}), {"skipped": "OpenShot is not installed"})
 
 
 class TestInOpenShotsEngine(unittest.TestCase):
