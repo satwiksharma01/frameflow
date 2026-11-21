@@ -175,6 +175,15 @@ class TestNewFolder(_Plan):
         self.assertEqual(app_think.new_folder(self.root, "नमस्ते दुनिया").name, "नमस्ते-दुनिया")
         self.assertEqual(app_think.new_folder(self.root, "?!").name, "video")
 
+    def test_a_windows_device_name_gets_a_folder_that_is_really_made(self):
+        # Windows makes no folder called "nul" (mkdir succeeds into the null device), and "con" or "com1"
+        # are hard to open or delete there.
+        for prompt, name in [("nul", "nul-video"), ("CON", "con-video"), ("com1", "com1-video"),
+                             ("lpt9", "lpt9-video"), ("aux", "aux-video"), ("console", "console")]:
+            folder = app_think.new_folder(self.root, prompt)
+            self.assertEqual(folder.name, name)
+            self.assertTrue(folder.is_dir())
+
     def test_a_file_as_the_root_is_refused_at_once(self):
         root = self.root / "videos"
         root.write_text("not a folder", encoding="utf-8")

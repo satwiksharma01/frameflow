@@ -74,6 +74,8 @@ STORYBOARD_LAST_STEP = (
     "composition files.\n")
 FILE_SUFFIXES = (".html", ".css", ".js", ".svg", ".json")
 FILE_BYTES, FILES_BYTES = 512 * 1024, 4 * 1024 * 1024
+# Windows' device names: "nul" makes no folder at all, and "con" or "com1" one hard to open or delete.
+DEVICES = {"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in "0123456789¹²³")}
 
 
 def new_folder(root: Path, prompt: str) -> Path:
@@ -81,6 +83,8 @@ def new_folder(root: Path, prompt: str) -> Path:
     # Any script's letters, digits and marks; anything else, Windows' forbidden characters too, parts words.
     plain = "".join(ch if ch.isalnum() or unicodedata.category(ch).startswith("M") else " " for ch in prompt.lower())
     name = "-".join(plain.split()[:5])[:40].strip("-") or "video"
+    if name in DEVICES:
+        name += "-video"
     root.mkdir(parents=True, exist_ok=True)     # a file in its place raises here, not on every name below
     for n in itertools.count(1):
         folder = root / (name if n == 1 else f"{name}-{n}")
