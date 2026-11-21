@@ -18,6 +18,7 @@ import type {
 } from '../shared/types'
 import { createChosen } from './chosen'
 import { thinkArgs, type Engine } from './engine'
+import { ownPage } from './guard'
 import { inside, previewAt, rangeOf, thumbnailAt } from './media'
 import { noticeFor, thoughtNotice } from './notice'
 import {
@@ -79,7 +80,14 @@ const FILES = {
   script: { title: 'Choose the script', extensions: ['txt', 'md'] }
 }
 
-export function registerIpc(engine: Engine, root: string): void {
+export function registerIpc(engine: Engine, root: string, page: string): void {
+  // Only the app's own page is answered: a page the window should never have shown gets nothing.
+  const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void =>
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!ownPage(page, event.senderFrame?.url ?? ''))
+        throw new Error('Frameflow answers only its own window')
+      return listener(event, ...args)
+    })
   const videos = join(root, 'output')
   const data = app.getPath('userData') // the settings and the key: never in the repository or a video
   const chosen = createChosen()
@@ -95,19 +103,19 @@ export function registerIpc(engine: Engine, root: string): void {
     return path ? net.fetch(pathToFileURL(path).toString()) : new Response(null, { status: 403 })
   })
 
-  ipcMain.handle('ff:videos', () => engine.call<Video[]>('videos', { root: videos }))
-  ipcMain.handle('ff:describe', async (_, folder: string) =>
+  handle('ff:videos', () => engine.call<Video[]>('videos', { root: videos }))
+  handle('ff:describe', async (_, folder: string) =>
     shown(await engine.call<Described>('describe', { folder: video(folder) }))
   )
-  ipcMain.handle('ff:thumbnail', async (_, folder: string, key: string) => {
+  handle('ff:thumbnail', async (_, folder: string, key: string) => {
     const path = await engine.call<string | null>('thumbnail', { folder: video(folder), key })
     return path && `${MEDIA}://thumb/?p=${encodeURIComponent(path)}`
   })
-  ipcMain.handle('ff:looks', (_, folder: string) =>
+  handle('ff:looks', (_, folder: string) =>
     engine.call<string[]>('looks', { folder: video(folder) })
   )
   // Only files the creator picked here may join a video: the engine refuses any other new path.
-  ipcMain.handle('ff:edit', async (_, folder: string, op: EditOp, version: string) =>
+  handle('ff:edit', async (_, folder: string, op: EditOp, version: string) =>
     changed(
       await engine.call<EditAnswer>('edit', {
         folder: video(folder),
@@ -117,13 +125,13 @@ export function registerIpc(engine: Engine, root: string): void {
       })
     )
   )
-  ipcMain.handle('ff:undo', async (_, folder: string, version: string) =>
+  handle('ff:undo', async (_, folder: string, version: string) =>
     changed(await engine.call<EditAnswer>('undo', { folder: video(folder), version }))
   )
-  ipcMain.handle('ff:redo', async (_, folder: string, version: string) =>
+  handle('ff:redo', async (_, folder: string, version: string) =>
     changed(await engine.call<EditAnswer>('redo', { folder: video(folder), version }))
   )
-  ipcMain.handle('ff:choose-file', async (event) => {
+  handle('ff:choose-file', async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const options = {
       title: 'Choose a picture or a clip',
@@ -157,7 +165,7 @@ export function registerIpc(engine: Engine, root: string): void {
       .catch(() => 'Your video')
     new Notification({ title: 'Frameflow', body: body(title) }).show()
   }
-  ipcMain.handle('ff:build', async (event, folder: string) => {
+  handle('ff:build', async (event, folder: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const notice = noticeFor()
     let ok = false
@@ -169,7 +177,7 @@ export function registerIpc(engine: Engine, root: string): void {
     })
     if (!event.sender.isDestroyed()) event.sender.send('ff:build-finished', folder, ok)
   })
-  ipcMain.handle('ff:choose-files', async (event, kind: keyof typeof FILES) => {
+  handle('ff:choose-files', async (event, kind: keyof typeof FILES) => {
     if (!Object.hasOwn(FILES, kind)) throw new Error(`Frameflow has no files of the kind ${kind}`)
     const window = BrowserWindow.fromWebContents(event.sender)
     const { title, extensions } = FILES[kind]
@@ -190,16 +198,16 @@ export function registerIpc(engine: Engine, root: string): void {
   })
 
   const agents = keptAgents(() => engine.call<SettingsView['agents']>('thinkers', {}))
-  ipcMain.handle('ff:settings', async (_, fresh: unknown): Promise<SettingsView> =>
+  handle('ff:settings', async (_, fresh: unknown): Promise<SettingsView> =>
     settingsView(data, await agents(fresh === true))
   )
-  ipcMain.handle('ff:save-settings', (_, s: Settings) => saveSettings(data, s))
-  ipcMain.handle('ff:save-key', (_, key: string) => saveKey(data, String(key)))
-  ipcMain.handle('ff:forget-key', () => forgetKey(data))
-  ipcMain.handle('ff:new-video', (_, prompt: string) =>
+  handle('ff:save-settings', (_, s: Settings) => saveSettings(data, s))
+  handle('ff:save-key', (_, key: string) => saveKey(data, String(key)))
+  handle('ff:forget-key', () => forgetKey(data))
+  handle('ff:new-video', (_, prompt: string) =>
     engine.call<string>('new_video', { root: videos, prompt })
   )
-  ipcMain.handle('ff:edit-plan', async (_, folder: string, fields: Record<string, unknown>) =>
+  handle('ff:edit-plan', async (_, folder: string, fields: Record<string, unknown>) =>
     shown(await engine.call<Described>('edit_plan', { folder: video(folder), fields }))
   )
 
@@ -227,7 +235,7 @@ export function registerIpc(engine: Engine, root: string): void {
     })
   }
   // The creator may leave while it thinks: the notice tells when it is done, as a build's does.
-  ipcMain.handle('ff:think', (event, folder: string, request: ThinkRequest) => {
+  handle('ff:think', (event, folder: string, request: ThinkRequest) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     return think(
       event,
@@ -241,8 +249,8 @@ export function registerIpc(engine: Engine, root: string): void {
     )
   })
   // No folder: a test asks the thinker for one answer and writes nothing.
-  ipcMain.handle('ff:test-thinking', (event) => think(event, 'ff:test-thinking', '', ['test']))
-  ipcMain.handle('ff:open', (event, folder: string) =>
+  handle('ff:test-thinking', (event) => think(event, 'ff:test-thinking', '', ['test']))
+  handle('ff:open', (event, folder: string) =>
     engine.open(video(folder), (e: BuildEvent) => {
       if (!event.sender.isDestroyed()) event.sender.send('ff:open-event', folder, e)
     })
