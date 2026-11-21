@@ -258,6 +258,28 @@ it('a job replaced by a newer one shows nothing for it', async () => {
   expect(button('Approve and write the storyboard')).toBeEnabled()
 })
 
+it('a job the creator stopped shows no failure, and its plan can be approved again', async () => {
+  const fake = api(planned())
+  const onThought = vi.fn()
+  render(
+    <>
+      <PromptStep folder={FOLDER} onThought={onThought} />
+      <Toasts />
+    </>
+  )
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Approve and write the storyboard' })
+  )
+  fake.say({ type: 'step', text: 'Checking the facts' })
+  const done = { type: 'done' as const, ok: false, stopped: true as const }
+  await fake.end(done)
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByText(/could not be written/)).toBeNull()
+  expect(screen.queryByRole('list', { name: 'Plan steps' })).toBeNull()
+  expect(button('Approve and write the storyboard')).toBeEnabled()
+  expect(onThought).toHaveBeenCalledWith(FOLDER, 'approve', done, false) // the app reads it again
+})
+
 it('a storyboard changed outside the app is said in the app’s words, not as a failure', async () => {
   const fake = api(planned())
   const onThought = vi.fn()
@@ -413,6 +435,31 @@ it('when a job ends, the focus goes to the plan; it waits there while the job ru
   expect(heading).toHaveFocus() // not the page: the field it was asked from is off
   await fake.end({ type: 'done', ok: true })
   expect(heading).toHaveFocus()
+})
+
+it('while it thinks, Stop stops the job, and the focus goes back to the plan', async () => {
+  const fake = api(planned(), { stop: vi.fn(async () => true) })
+  render(<PromptStep folder={FOLDER} />)
+  expect(screen.queryByRole('button', { name: /^Stop/ })).toBeNull()
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Approve and write the storyboard' })
+  )
+  await userEvent.click(button('Stop writing the storyboard'))
+  expect(fake.stop).toHaveBeenCalledWith('think', FOLDER)
+  await fake.end({ type: 'done', ok: false, stopped: true })
+  expect(screen.queryByRole('button', { name: /^Stop/ })).toBeNull()
+  expect(screen.getByRole('heading', { name: /The plan/ })).toHaveFocus()
+})
+
+it('Stop names the job it stops: the plan, or a change made on another step', async () => {
+  const fake = api(planned(), { stop: vi.fn(async () => true) })
+  render(<PromptStep folder={FOLDER} />)
+  const words = await screen.findByRole('textbox', { name: 'Change the plan in words' })
+  await userEvent.type(words, 'make it warmer{Enter}')
+  expect(button('Stop writing the plan')).toBeInTheDocument()
+  await fake.end({ type: 'done', ok: true })
+  act(() => void think(FOLDER, { kind: 'change', words: 'shorter', version: 'v1' }))
+  expect(button('Stop the change')).toBeInTheDocument()
 })
 
 it('when a job fails, the focus goes to Try again, or to Open Settings', async () => {

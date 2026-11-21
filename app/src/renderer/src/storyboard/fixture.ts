@@ -9,7 +9,12 @@ const SCENES: [number, number, string, string][] = [
   [4.467, 2.467, 'same thing three times like this', '1:03–1:05'],
   [6.933, 1.767, 'video editing takes a lot of time', '1:05–1:07'],
   [8.7, 2.733, 'the goal is to remove all the repetitive editing work', '5:12–5:15'],
-  [11.433, 4.8, 'create a complete first cut instead of spending an hour editing a reel you could start with something that', '4:05–4:10'],
+  [
+    11.433,
+    4.8,
+    'create a complete first cut instead of spending an hour editing a reel you could start with something that',
+    '4:05–4:10'
+  ],
   [16.233, 1.9, 'already almost finished', '4:11–4:12'],
   [18.133, 1.967, 'I still want the human to have control', '4:40–4:41']
 ]
@@ -51,7 +56,9 @@ export const tierList: Described = {
     scenes: scenes.map((s) => ({ start: s.start!, end: s.start! + s.seconds! })),
     joins: {
       checked: 8,
-      suspect: [{ at: 11.433, before: ' editing work', after: ' create a', heard: 'editing or create' }]
+      suspect: [
+        { at: 11.433, before: ' editing work', after: ' create a', heard: 'editing or create' }
+      ]
     },
     picture: { looked: 11, problems: [] }
   }

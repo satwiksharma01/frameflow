@@ -17,12 +17,12 @@ function engine(described: Described = tierList): ReturnType<typeof vi.fn> {
 }
 
 const scene = (n: number): HTMLElement =>
-  screen.getByRole('option', { name: new RegExp(`^Scene ${n}\\b`) })
+  screen.getByRole('button', { name: new RegExp(`^Scene ${n}:`) })
 
 it('Ctrl K opens the palette and Escape closes it', async () => {
   engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   expect(await screen.findByRole('dialog')).toBeInTheDocument()
   expect(screen.getByPlaceholderText('Type a command or a scene…')).toHaveFocus()
@@ -33,31 +33,31 @@ it('Ctrl K opens the palette and Escape closes it', async () => {
 it('closing the palette gives the focus back to the selected scene, so the arrows work', async () => {
   engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(3))
   await userEvent.keyboard('{Control>}k{/Control}')
   await screen.findByRole('dialog')
   await userEvent.keyboard('{Escape}')
   await waitFor(() => expect(scene(3)).toHaveFocus())
   await userEvent.keyboard('{ArrowRight}')
-  expect(scene(4)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(4)).toHaveAttribute('aria-current', 'true')
 })
 
 it('typing "turn" offers the chapter, and choosing it selects its first scene', async () => {
   engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.type(await screen.findByPlaceholderText('Type a command or a scene…'), 'turn')
   await userEvent.click(await screen.findByRole('option', { name: /Chapter 02 · Turn/ }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  expect(scene(6)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(6)).toHaveAttribute('aria-current', 'true')
 })
 
 it('Delete it sends a delete for the selected scene', async () => {
   const edit = engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(3))
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(await screen.findByRole('option', { name: /Delete it/ }))
@@ -68,7 +68,7 @@ it('Change its words leaves the cursor in the words field once the palette has c
   const dialog = slowExits()
   const edit = engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(6))
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(await screen.findByRole('option', { name: /Change its words/ }))
@@ -97,7 +97,7 @@ it('Add a title after it leaves the cursor in its words on screen once the palet
     thumbnail: async () => null
   } as never
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(3))
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(await screen.findByRole('option', { name: /Add a title after it/ }))
@@ -110,7 +110,7 @@ it('Add a title after it leaves the cursor in its words on screen once the palet
 it('Undo is greyed out when there is nothing to undo', async () => {
   engine({ ...tierList, can_undo: false, can_redo: false })
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   expect(await screen.findByRole('option', { name: /^Undo/ })).toHaveAttribute(
     'aria-disabled',
@@ -121,7 +121,7 @@ it('Undo is greyed out when there is nothing to undo', async () => {
 it('Listen to its check plays around the selected scene’s check', async () => {
   engine({ ...tierList, preview: 'ff-media://preview/?p=x' })
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(6))
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(await screen.findByRole('option', { name: /Listen to its check/ }))
@@ -131,7 +131,7 @@ it('Listen to its check plays around the selected scene’s check', async () => 
 it('without a preview Play it and Listen are greyed out, and a scene with no check has no Listen', async () => {
   engine({ ...tierList, preview: null })
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   expect(await screen.findByRole('option', { name: /Play it/ })).toHaveAttribute(
     'aria-disabled',
@@ -151,7 +151,7 @@ it('without a preview Play it and Listen are greyed out, and a scene with no che
 it('the captions switch in the palette says what it will do', async () => {
   const edit = engine()
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(
     await screen.findByRole('option', { name: /Turn word-by-word captions off/ })

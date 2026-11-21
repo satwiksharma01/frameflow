@@ -5,8 +5,8 @@ import { reducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { Described } from '@shared/types'
 import { LISTEN_AFTER, LISTEN_BEFORE, ScenePlayer } from '../player/ScenePlayer'
-import { BuildLine, Steps } from '../storyboard/BuildBar'
-import { startBuild, useBuild } from '../storyboard/builds'
+import { BuildLine, Steps, StopButton } from '../storyboard/BuildBar'
+import { startBuild, stopBuild, useBuild } from '../storyboard/builds'
 import { FiguresLine } from '../storyboard/FiguresLine'
 import { actionFor, inTextField } from '../storyboard/keys'
 import { clock, toView, type SceneView, type SectionView } from '../storyboard/model'
@@ -65,10 +65,10 @@ function Heading({ section }: { section: SectionView }): React.JSX.Element {
   const last = section.scenes.at(-1)
   return (
     <h2 className="mb-1 mt-[22px] flex items-baseline gap-2.5 text-[15px] font-bold tracking-[-0.01em]">
-      <span className="text-[11px]">{two(section.number)}</span>
+      <span className="text-[12px]">{two(section.number)}</span>
       {section.title}
       {section.start !== null && last && last.start !== null && (
-        <span className="time ml-auto text-[11px] font-normal text-quiet">
+        <span className="time ml-auto text-[12px] font-normal text-quiet">
           {clock(section.start)}–{clock(last.start + (last.seconds ?? 0))}
         </span>
       )}
@@ -406,6 +406,13 @@ export function VideoScreen({
             onSettings={onSettings}
           />
         )}
+        {/* Stopped, the build may leave Open in OpenShot or Build video: the screen keeps the focus. */}
+        <StopButton
+          label="Stop the build"
+          running={building}
+          onStop={() => stopBuild(folder)}
+          after={root}
+        />
         {offerOpen && (
           <Button
             onClick={open}

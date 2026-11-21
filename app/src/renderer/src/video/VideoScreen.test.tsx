@@ -235,11 +235,11 @@ it('Go to scene 06 opens the storyboard with scene 6 selected', async () => {
     looks: async () => []
   } as never
   render(<App />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(button('Video'))
   await userEvent.click(await screen.findByRole('button', { name: 'Open in the storyboard' }))
-  const six = await screen.findByRole('option', { name: /^Scene 6\b/ })
-  expect(six).toHaveAttribute('aria-selected', 'true')
+  const six = await screen.findByRole('button', { name: /^Scene 6:/ })
+  expect(six).toHaveAttribute('aria-current', 'true')
   await waitFor(() => expect(six).toHaveFocus())
   expect(button('Storyboard')).toHaveAttribute('aria-current', 'step')
 })
@@ -431,6 +431,16 @@ describe('the confirmed states and sizes', () => {
     expect(screen.getByText('Checking cut 5 of 8')).toBeInTheDocument()
     expect(button('Building…')).toBeDisabled()
     expect(button('Play')).toBeDisabled()
+  })
+
+  it('while it builds, Stop beside Building… stops it', async () => {
+    const { build, say } = fakeBuild()
+    const stop = vi.fn(async () => true)
+    show(unbuilt, { build, stop })
+    await userEvent.click(button('Build video'))
+    say({ type: 'step', text: 'Recording the voiceover' })
+    await userEvent.click(button('Stop the build'))
+    expect(stop).toHaveBeenCalledWith('build', FOLDER)
   })
 
   it('A failed build: the engine’s words over the script, the failed step marked, and Build video', async () => {

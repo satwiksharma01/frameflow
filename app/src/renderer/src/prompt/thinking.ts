@@ -94,6 +94,11 @@ export function forgetFailure(folder: string): void {
   listeners.forEach((listener) => listener())
 }
 
+/** Stop the video's thinking job: it ends as stopped, with nothing said. */
+export function stopThinking(folder: string): void {
+  void window.frameflow.stop('think', folder)
+}
+
 /** Ask the thinker for one job on a video. Resolves with its end, or with null when a newer job for the
  *  same video replaced it: the engine ends that one without a word, and nothing is shown for it. */
 export function think(folder: string, request: ThinkRequest): Promise<Done | null> {
@@ -129,7 +134,8 @@ export function think(folder: string, request: ThinkRequest): Promise<Done | nul
       const ended = done as Done | null
       // No end of its own: a job this store did not start took its place. A change in words that fails
       // says so in a toast where it was asked; kept here, the prompt step would show it as the plan's.
-      if (!ended || ended.ok || ended.changed || request.kind === 'change')
+      // One the creator stopped is no failure.
+      if (!ended || ended.ok || ended.changed || ended.stopped || request.kind === 'change')
         set({ running: false, steps: [] })
       else set({ running: false, failure: ended.message ?? '' })
       return ended

@@ -4,3 +4,5 @@ pnpm-lock.yaml
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
+# shadcn/ui's components, as its CLI writes them, so an update can replace them
+src/renderer/src/components/ui

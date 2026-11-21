@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { say } from './Toasts'
+import { say } from './say'
 import {
   CommandDialog,
   CommandEmpty,
@@ -73,10 +73,14 @@ export function CommandPalette({
     setWords(null)
     setProblem(null)
   }
-  const run = (thing: () => void) => () => {
-    close()
-    thing()
-  }
+  // An item's action, run as the palette closes. `takesFocus`: the action puts the focus where it is wanted.
+  const run =
+    (thing: () => void, takesFocus = false) =>
+    (): void => {
+      close()
+      if (takesFocus) focused.current = true
+      thing()
+    }
   const add = async (scene: NewScene): Promise<EditResult> => {
     const result = await edit(
       { op: 'add', after: selected, scene },
@@ -118,12 +122,7 @@ export function CommandPalette({
           <CommandList className="max-h-[380px]">
             <CommandEmpty>Nothing matches.</CommandEmpty>
             <CommandGroup heading={`Scene ${two(selected)}`}>
-              <CommandItem
-                onSelect={run(() => {
-                  focused.current = true
-                  act('edit-words')
-                })}
-              >
+              <CommandItem onSelect={run(() => act('edit-words'), true)}>
                 Change its words<CommandShortcut>Enter</CommandShortcut>
               </CommandItem>
               <CommandItem disabled={!described.preview} onSelect={run(() => act('play'))}>
@@ -147,10 +146,8 @@ export function CommandPalette({
                 Delete it<CommandShortcut>Delete</CommandShortcut>
               </CommandItem>
               <CommandItem
-                onSelect={run(() => {
-                  focused.current = true // the new title's words on screen take it
-                  void add({ kind: 'title', text: 'New title' })
-                })}
+                // The new title's words on screen take the focus.
+                onSelect={run(() => void add({ kind: 'title', text: 'New title' }), true)}
               >
                 Add a title after it
               </CommandItem>
@@ -169,12 +166,7 @@ export function CommandPalette({
               </CommandItem>
             </CommandGroup>
             <CommandGroup heading="Video">
-              <CommandItem
-                onSelect={run(() => {
-                  focused.current = true
-                  changeInWords()
-                })}
-              >
+              <CommandItem onSelect={run(changeInWords, true)}>
                 Change it in words<CommandShortcut>{MOD} L</CommandShortcut>
               </CommandItem>
               <CommandItem onSelect={run(() => startBuild(folder))}>Build video</CommandItem>
@@ -201,10 +193,8 @@ export function CommandPalette({
             <CommandGroup heading="Go to">
               {onSettings && (
                 <CommandItem
-                  onSelect={run(() => {
-                    focused.current = true // the storyboard is leaving; its scene does not take the focus
-                    onSettings()
-                  })}
+                  // The storyboard is leaving; its scene does not take the focus.
+                  onSelect={run(onSettings, true)}
                 >
                   Settings
                 </CommandItem>

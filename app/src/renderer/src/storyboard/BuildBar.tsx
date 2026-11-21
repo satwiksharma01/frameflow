@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { Described } from '@shared/types'
-import { startBuild, useBuild, type Build } from './builds'
+import { startBuild, stopBuild, useBuild, type Build } from './builds'
 import { summary } from './model'
 
 /** What the last build found, or what a build is doing now, in one line. */
@@ -69,6 +69,48 @@ export function Steps({
   )
 }
 
+/** Stop, beside a job's main action while the job runs. Once the job has stopped, the focus Stop held
+ *  goes on to `after`: the control that takes its place. */
+export function StopButton({
+  label,
+  running,
+  onStop,
+  after,
+  className
+}: {
+  /** What it stops, for a screen reader: a build and a change can both be running. */
+  label: string
+  running: boolean
+  onStop(): void
+  after: React.RefObject<HTMLElement | null>
+  className?: string
+}): React.JSX.Element | null {
+  const pressed = useRef(false)
+  useEffect(() => {
+    if (running || !pressed.current) return
+    pressed.current = false
+    after.current?.focus()
+  }, [running, after])
+  if (!running) return null
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={label}
+      onClick={() => {
+        pressed.current = true
+        onStop()
+      }}
+      className={cn(
+        'h-10 flex-none rounded-lg border border-dim px-[22px] text-[13px] font-bold',
+        className
+      )}
+    >
+      Stop
+    </Button>
+  )
+}
+
 interface Props {
   folder: string
   described: Described
@@ -89,6 +131,7 @@ export function BuildBar({ folder, described, onBuilt }: Props): React.JSX.Eleme
 
   const building = build.state === 'building'
   const failed = build.state === 'failed'
+  const main = useRef<HTMLButtonElement>(null)
   return (
     <>
       {failed && (
@@ -101,7 +144,14 @@ export function BuildBar({ folder, described, onBuilt }: Props): React.JSX.Eleme
       )}
       <BuildLine build={build} described={described} />
       <Steps label="Build steps" steps={build.steps} running={building} failed={failed} />
+      <StopButton
+        label="Stop the build"
+        running={building}
+        onStop={() => stopBuild(folder)}
+        after={main}
+      />
       <Button
+        ref={main}
         onClick={() => startBuild(folder)}
         disabled={building}
         className="h-10 flex-none rounded-lg px-[22px] text-[13px] font-bold"

@@ -448,7 +448,7 @@ function Frame({ children }: { children?: React.ReactNode }): React.JSX.Element 
             aria-current="true"
             className="flex h-8 items-baseline gap-2.5 border-t-2 border-ink pt-2 text-[13px]"
           >
-            <b className="text-[11px]">01</b> How Frameflow thinks
+            <b className="text-[12px]">01</b> How Frameflow thinks
           </a>
         </nav>
         <section

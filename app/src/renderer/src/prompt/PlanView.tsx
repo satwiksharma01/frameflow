@@ -11,7 +11,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { Described, Plan, ThinkRequest } from '@shared/types'
-import { say } from '../shell/Toasts'
+import { say } from '../shell/say'
 import { clock } from '../storyboard/model'
 
 const SHAPES: Plan['aspect'][] = ['16:9', '9:16', '1:1']
@@ -129,7 +129,7 @@ export function Label({
     <h2
       ref={ref}
       tabIndex={ref ? -1 : undefined}
-      className="mb-2.5 flex items-baseline gap-2.5 text-[11px] font-normal text-quiet"
+      className="mb-2.5 flex items-baseline gap-2.5 text-[12px] font-normal text-quiet"
     >
       <b className="font-bold text-ink">{two(n)}</b>
       <span id={id}>{children}</span>
@@ -246,7 +246,7 @@ export function Figures({
           <i key={i} className="h-[3px] flex-1 rounded-[2px] bg-dim" />
         ))}
       </div>
-      <div className="flex justify-between gap-4 text-[11px] text-quiet">
+      <div className="flex justify-between gap-4 text-[12px] text-quiet">
         <span>0:00</span>
         <span>The storyboard fills this when you approve</span>
         <span>{plan ? clock(seconds) : ''}</span>
@@ -511,9 +511,9 @@ function Part({
   return (
     <section aria-labelledby={id}>
       <h3 className="mb-1 mt-5 flex items-baseline gap-2.5 text-[15px] font-bold">
-        <b className="text-[11px]">{two(n)}</b>
+        <b className="text-[12px]">{two(n)}</b>
         <span id={id}>{name}</span>
-        <span className="ml-auto text-[11px] font-normal text-quiet">{note}</span>
+        <span className="ml-auto text-[12px] font-normal text-quiet">{note}</span>
       </h3>
       {children}
     </section>

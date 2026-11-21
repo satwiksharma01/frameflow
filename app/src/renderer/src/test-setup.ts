@@ -51,7 +51,9 @@ class FakeObserver {
   unobserve(element: Element): void {
     observers.watching.delete(element)
   }
-  disconnect(): void {}
+  disconnect(): void {
+    // what it watched is let go before the next test
+  }
 }
 
 beforeEach(() => {
@@ -74,9 +76,15 @@ beforeEach(() => {
   }
   // Nor ResizeObserver, which menus measure their trigger with.
   globalThis.ResizeObserver ??= class {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
+    observe(): void {
+      // no sizes change in jsdom
+    }
+    unobserve(): void {
+      // nothing was watched
+    }
+    disconnect(): void {
+      // nothing was watched
+    }
   } as never
 })
 afterEach(() => {

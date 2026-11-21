@@ -13,6 +13,7 @@ function fakeBuild(): {
   build: ReturnType<typeof vi.fn>
   say: (...events: BuildEvent[]) => void
   end: (ok?: boolean, message?: string) => Promise<void>
+  stopped: () => Promise<void>
 } {
   let onEvent: (e: BuildEvent) => void = () => {}
   let finish: () => void = () => {}
@@ -26,6 +27,12 @@ function fakeBuild(): {
     end: async (ok = true, message) => {
       await act(async () => {
         onEvent(ok ? { type: 'done', ok } : { type: 'done', ok, message })
+        finish()
+      })
+    },
+    stopped: async () => {
+      await act(async () => {
+        onEvent({ type: 'done', ok: false, stopped: true })
         finish()
       })
     }
@@ -43,6 +50,35 @@ it('Build video starts a build and is disabled while it runs', async () => {
   expect(button('Building')).toBeDisabled()
   await end()
   expect(button('Build video')).toBeEnabled()
+})
+
+it('a build the creator stopped offers Build video again, says no failure, and reads the storyboard again', async () => {
+  const { build, say, stopped } = fakeBuild()
+  window.frameflow = { build } as never
+  const onBuilt = vi.fn()
+  render(<BuildBar folder={FOLDER} described={unbuilt} onBuilt={onBuilt} />)
+  await userEvent.click(button('Build video'))
+  say({ type: 'step', text: 'Building the project' })
+  await stopped()
+  expect(button('Build video')).toBeEnabled()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('list', { name: 'Build steps' })).toBeNull()
+  expect(onBuilt).toHaveBeenCalledTimes(1) // what the stopped run left is read again
+})
+
+it('while it builds, Stop beside Building stops it, and the focus goes on to Build video', async () => {
+  const { build, stopped } = fakeBuild()
+  const stop = vi.fn(async () => true)
+  window.frameflow = { build, stop } as never
+  render(<BuildBar folder={FOLDER} described={unbuilt} onBuilt={() => {}} />)
+  expect(screen.queryByRole('button', { name: 'Stop the build' })).toBeNull()
+  await userEvent.click(button('Build video'))
+  expect(button('Stop the build')).toHaveTextContent('Stop')
+  await userEvent.click(button('Stop the build'))
+  expect(stop).toHaveBeenCalledWith('build', FOLDER)
+  await stopped()
+  expect(screen.queryByRole('button', { name: 'Stop the build' })).toBeNull()
+  expect(button('Build video')).toHaveFocus()
 })
 
 it('a second click while building starts nothing', async () => {
@@ -134,7 +170,7 @@ it('the storyboard reloads when the build is built, before its preview is made',
       )}
     />
   )
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(button('Build video'))
   say({ type: 'step', text: 'Listening to every cut' }, { type: 'built' })
   await waitFor(() => expect(describe).toHaveBeenCalledTimes(2))
@@ -167,12 +203,12 @@ it('when the build ends, the storyboard is described again and scene 6 shows its
       )}
     />
   )
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(screen.queryByText('May clip “work”')).toBeNull()
   await userEvent.click(button('Build video'))
   await end()
   await waitFor(() => expect(describe).toHaveBeenCalledTimes(2))
   expect(await screen.findAllByText('May clip “work”')).not.toHaveLength(0)
   expect(screen.getByRole('group', { name: 'Length' })).toHaveTextContent('20.1/20 seconds')
-  expect(screen.getAllByRole('option')).toHaveLength(9) // still on screen: no flash back to loading
+  expect(screen.getAllByRole('button', { name: /^Scene \d+:/ })).toHaveLength(9) // still on screen: no flash back to loading
 })

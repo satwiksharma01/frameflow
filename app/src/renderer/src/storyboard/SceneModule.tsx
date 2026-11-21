@@ -1,5 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useId } from 'react'
 import { reducedMotion, SPRING_MS, springEasing } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { Described } from '@shared/types'
@@ -26,20 +27,28 @@ export function SceneModule({
   onSelect
 }: Props): React.JSX.Element {
   const wide = aspect === '16:9'
-  // Dragged, it follows the pointer from where it was grabbed; the others move aside on the spring. The
-  // scene stays an option of the list: dnd-kit's own role and tab stop are left off.
+  // Dragged, it follows the pointer from where it was grabbed; the others move aside on the spring. Only the
+  // selected scene is a tab stop, so dnd-kit's own is left off.
   const { setNodeRef, listeners, attributes, transform, transition, isDragging } = useSortable({
     id: scene.key,
     transition: reducedMotion() ? null : { duration: SPRING_MS, easing: EASING }
   })
+  // The label replaces what the card shows, so its length and checks are read after it, then how to move it.
+  const about = useId()
+  const heard = [
+    scene.seconds !== null && `${scene.seconds.toFixed(1)} seconds.`,
+    ...scene.checks.map((check) => `Check: ${check.what}.`)
+  ].filter(Boolean)
   return (
     <div
       ref={setNodeRef}
-      role="option"
-      aria-selected={selected}
+      role="button"
+      aria-current={selected || undefined}
       aria-label={`Scene ${scene.number}: ${scene.says || scene.source}`}
       aria-roledescription={attributes['aria-roledescription']}
-      aria-describedby={attributes['aria-describedby']}
+      aria-describedby={
+        heard.length ? `${about} ${attributes['aria-describedby']}` : attributes['aria-describedby']
+      }
       tabIndex={selected ? 0 : -1}
       data-scene={scene.number}
       data-dragging={isDragging || undefined}
@@ -54,6 +63,11 @@ export function SceneModule({
         isDragging && 'z-10 scale-[1.02] outline outline-1 outline-ink active:scale-[1.02]'
       )}
     >
+      {heard.length > 0 && (
+        <span id={about} hidden>
+          {heard.join(' ')}
+        </span>
+      )}
       <span aria-hidden className="absolute inset-x-0 top-px h-px bg-line" />
       {scene.seconds === null ? (
         // No length yet, so no rule to draw: the hairline alone carries the selection.
@@ -69,7 +83,7 @@ export function SceneModule({
           )}
         />
       )}
-      <div className="flex items-baseline gap-2.5 text-[11px] text-quiet">
+      <div className="flex items-baseline gap-2.5 text-[12px] text-quiet">
         <b className="text-[15px] font-bold text-ink">{String(scene.number).padStart(2, '0')}</b>
         {scene.start !== null && <span className="time">{clock(scene.start)}</span>}
         {scene.seconds !== null && (

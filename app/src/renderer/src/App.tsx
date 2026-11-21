@@ -5,7 +5,8 @@ import type { ThinkRequest, Video } from '@shared/types'
 import { PromptStep } from './prompt/PromptStep'
 import type { Done } from './prompt/thinking'
 import { SettingsPage } from './settings/SettingsPage'
-import { say, Toasts } from './shell/Toasts'
+import { say } from './shell/say'
+import { Toasts } from './shell/Toasts'
 import { TopBar, type Step } from './shell/TopBar'
 import { VideoRail } from './shell/VideoRail'
 import { BuildBar } from './storyboard/BuildBar'
@@ -80,7 +81,6 @@ function App(): React.JSX.Element {
   }, [step])
 
   const load = useCallback(() => {
-    setFailed(null)
     window.frameflow.videos().then(
       (found) => {
         setVideos(found)
@@ -105,8 +105,9 @@ function App(): React.JSX.Element {
     refresh()
     const { folder: shown, watching } = now.current
     // Its storyboard and video steps read what Approve wrote, or what changed under it, again.
-    if (kind === 'approve' && (done.ok || done.changed) && shown === f) setRevision((r) => r + 1)
-    if (done.changed) return // the prompt step has said so
+    if (kind === 'approve' && (done.ok || done.changed || done.stopped) && shown === f)
+      setRevision((r) => r + 1)
+    if (done.changed || done.stopped) return // the prompt step has said so, or the creator stopped it
     const title = now.current.listed.find((v) => v.folder === f)?.title
     const what = kind === 'approve' ? 'storyboard' : 'plan'
     const said = done.ok ? `The ${what} is written` : `The ${what} could not be written`
@@ -225,7 +226,13 @@ function App(): React.JSX.Element {
                   Set FRAMEFLOW_PYTHON to the Python that has Frameflow&apos;s requirements if it is
                   not the one on your PATH.
                 </p>
-                <Button className="mt-5 h-10 rounded-lg px-5" onClick={load}>
+                <Button
+                  className="mt-5 h-10 rounded-lg px-5"
+                  onClick={() => {
+                    setFailed(null)
+                    load()
+                  }}
+                >
                   Try again
                 </Button>
               </div>

@@ -250,6 +250,10 @@ export function registerIpc(engine: Engine, root: string, page: string): void {
   })
   // No folder: a test asks the thinker for one answer and writes nothing.
   handle('ff:test-thinking', (event) => think(event, 'ff:test-thinking', '', ['test']))
+  handle('ff:stop', (_, job: unknown, folder: string) => {
+    if (job !== 'build' && job !== 'think') throw new Error(`Frameflow has no job called ${job}`)
+    return engine.stop(job === 'build' ? 'building' : 'thinking', video(folder))
+  })
   handle('ff:open', (event, folder: string) =>
     engine.open(video(folder), (e: BuildEvent) => {
       if (!event.sender.isDestroyed()) event.sender.send('ff:open-event', folder, e)

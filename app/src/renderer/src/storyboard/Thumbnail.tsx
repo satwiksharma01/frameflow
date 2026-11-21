@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { SHAPES } from './shapes'
 
 // One request per picture, shared by the scene's module and the details panel. A picture is asked for by
 // its scene's key, which stays with the scene as scenes move. Kept per engine, so a
@@ -21,14 +22,6 @@ function picture(folder: string, pictureKey: string): Promise<string | null> {
     )
   return known.get(key)!
 }
-
-/** Forget every picture of a video, after a build may have changed them. */
-export function forgetPictures(folder: string): void {
-  const known = pictures()
-  for (const key of [...known.keys()]) if (key.endsWith(`|${folder}`)) known.delete(key)
-}
-
-export const SHAPES = { '9:16': 'aspect-[9/16]', '16:9': 'aspect-video', '1:1': 'aspect-square' }
 
 interface Props {
   folder: string
@@ -74,22 +67,20 @@ export function Thumbnail({
   }, [])
 
   useEffect(() => {
-    if (!near || title) return
-    if (!pictureKey) {
-      setSrc(null)
-      return
-    }
+    if (!near || title || !pictureKey) return
     let current = true
     picture(folder, pictureKey).then((url) => current && setSrc(url))
     return () => {
       current = false
     }
   }, [near, folder, pictureKey, title])
+  // A scene with no picture of its own shows its plain frame once it is near.
+  const shown = near && !pictureKey ? null : src
 
   return (
     <div
       ref={frame}
-      data-frame={title ? 'title' : src ? 'picture' : src === null ? 'plain' : 'waiting'}
+      data-frame={title ? 'title' : shown ? 'picture' : shown === null ? 'plain' : 'waiting'}
       className={cn(
         'grid flex-none place-items-center overflow-hidden',
         title ? 'bg-black' : 'bg-plain',
@@ -101,15 +92,15 @@ export function Thumbnail({
         <span className="line-clamp-4 px-[8%] text-center text-[clamp(8px,0.6em,15px)] font-bold leading-tight">
           {title}
         </span>
-      ) : src ? (
+      ) : shown ? (
         <img
-          src={src}
+          src={shown}
           alt=""
           role="presentation"
           draggable={false}
           className="size-full object-cover"
         />
-      ) : src === null ? (
+      ) : shown === null ? (
         <span className="text-[15px] font-bold text-quiet">{plain ?? number}</span>
       ) : null}
     </div>

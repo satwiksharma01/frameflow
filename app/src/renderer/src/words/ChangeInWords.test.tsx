@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import type { BuildEvent, Described, SettingsView, ThinkRequest } from '@shared/types'
 import { claudeCode, openAiKey } from '../prompt/fixture'
 import { think, useThought } from '../prompt/thinking'
-import { say, Toasts } from '../shell/Toasts'
+import { say } from '../shell/say'
+import { Toasts } from '../shell/Toasts'
 import { tierList } from '../storyboard/fixture'
 import { Storyboard } from '../storyboard/Storyboard'
 import { slowExits } from '../test-setup'
@@ -35,6 +36,7 @@ function engine(settings: SettingsView = claudeCode): {
   think: ReturnType<typeof vi.fn>
   describe: ReturnType<typeof vi.fn>
   undo: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
   say: (...events: BuildEvent[]) => void
   end: (done?: Done) => Promise<void>
 } {
@@ -48,10 +50,12 @@ function engine(settings: SettingsView = claudeCode): {
   )
   const describe = vi.fn(async () => tierList)
   const undo = vi.fn(async () => ({ described: { ...tierList, version: 'v3' }, notes: [] }))
+  const stop = vi.fn(async () => true)
   window.frameflow = {
     describe,
     think,
     undo,
+    stop,
     settings: async () => settings,
     thumbnail: async () => null
   } as never
@@ -59,6 +63,7 @@ function engine(settings: SettingsView = claudeCode): {
     think,
     describe,
     undo,
+    stop,
     say: (...events) => act(() => events.forEach((e) => onEvent(e))),
     end: async (done) => {
       await act(async () => {
@@ -80,10 +85,10 @@ function board(onSettings?: () => void): ReturnType<typeof render> {
 
 const field = (): HTMLElement => screen.getByRole('textbox', { name: FIELD })
 const scene = (n: number): HTMLElement =>
-  screen.getByRole('option', { name: new RegExp(`^Scene ${n}\\b`) })
+  screen.getByRole('button', { name: new RegExp(`^Scene ${n}:`) })
 
 async function send(words = WORDS): Promise<void> {
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(field())
   await userEvent.keyboard(`${words}{Enter}`)
 }
@@ -91,7 +96,7 @@ async function send(words = WORDS): Promise<void> {
 it('a sentence is sent with the storyboard’s version when Enter is pressed', async () => {
   const fake = engine()
   board()
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(field()).toHaveAttribute('placeholder', FIELD)
   await userEvent.click(field())
   await userEvent.keyboard('Put the S-tier ')
@@ -240,6 +245,37 @@ it('a failure is not kept as the plan’s, which the prompt step would show', as
   })
 })
 
+it('a change the creator stopped says nothing, and keeps the sentence to send again', async () => {
+  const fake = engine()
+  board()
+  await send()
+  const toasts = (): number => document.querySelectorAll('[data-sonner-toast]').length
+  const said = toasts() // a toast an earlier test left may still be up
+  await fake.end({ type: 'done', ok: false, stopped: true })
+  await new Promise((r) => setTimeout(r, 50)) // a toast would be up by now
+  expect(screen.queryByText(/Making the change/)).toBeNull()
+  expect(toasts()).toBe(said)
+  expect(field()).toHaveValue(WORDS)
+  expect(renderHook(() => useThought(FOLDER)).result.current).toMatchObject({
+    running: false,
+    failure: null
+  })
+})
+
+it('while a change runs, Stop stops it and puts the cursor back in the field', async () => {
+  const fake = engine()
+  board()
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
+  expect(screen.queryByRole('button', { name: 'Stop the change' })).toBeNull()
+  await send()
+  await userEvent.click(screen.getByRole('button', { name: 'Stop the change' }))
+  expect(fake.stop).toHaveBeenCalledWith('think', FOLDER)
+  expect(field()).toHaveFocus()
+  await fake.end({ type: 'done', ok: false, stopped: true })
+  expect(screen.queryByRole('button', { name: 'Stop the change' })).toBeNull()
+  expect(field()).toHaveValue(WORDS)
+})
+
 it('a failure that points to Settings offers Open Settings', async () => {
   const onSettings = vi.fn()
   const fake = engine()
@@ -277,7 +313,7 @@ it('leaving the storyboard while it thinks keeps the job, and coming back shows 
 it('Ctrl L goes to the field from the scenes, and Esc gives the focus back to them', async () => {
   engine()
   board()
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(3))
   await userEvent.keyboard('{Control>}l{/Control}')
   expect(field()).toHaveFocus()
@@ -300,7 +336,7 @@ it('while it thinks, Esc keeps the field and Enter sends nothing more', async ()
 it('while a plan job runs, the field shows its step and sends nothing, so the job goes on', async () => {
   const fake = engine()
   board()
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   act(() => void think(FOLDER, { kind: 'approve' })) // Approve, asked on the prompt step
   fake.say({ type: 'step', text: 'Writing the storyboard' })
   expect(screen.getByText('Writing the storyboard…')).toBeInTheDocument()
@@ -345,7 +381,7 @@ it('a change that lands after its video has gone names it, and leaves the shown 
 it('a click on the field’s hint puts the cursor in it', async () => {
   engine()
   board()
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(screen.getByText('Ctrl L'))
   expect(field()).toHaveFocus()
 })
@@ -354,7 +390,7 @@ it('the command palette has Change it in words, which leaves the cursor in the f
   const dialog = slowExits()
   engine()
   board()
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.keyboard('{Control>}k{/Control}')
   await userEvent.click(await screen.findByRole('option', { name: /^Change it in words/ }))
   // By its label: while the palette closes, Radix still hides the page from the accessibility tree.

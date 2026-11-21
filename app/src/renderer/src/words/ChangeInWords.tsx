@@ -1,9 +1,10 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { SettingsView } from '@shared/types'
-import { think, thinker, useThought } from '../prompt/thinking'
-import { say } from '../shell/Toasts'
+import { stopThinking, think, thinker, useThought } from '../prompt/thinking'
+import { say } from '../shell/say'
 import type { StoryboardState } from '../storyboard/useStoryboard'
 
 const FIELD = 'Change it in words, like “make scene 4 shorter”'
@@ -85,7 +86,7 @@ export function ChangeInWords({
     const title = state.described?.title
     onDone?.()
     void think(folder, request).then((done) => {
-      if (!done) return // replaced by a newer job, which says what it does
+      if (!done || done.stopped) return // replaced by a newer job, which says what it does, or stopped
       const screen = shown.get(folder)
       // A sentence that failed, or met a storyboard changed meanwhile, stays to be sent again.
       if (done.ok || done.refused) setWords('')
@@ -140,7 +141,7 @@ export function ChangeInWords({
         className="h-full flex-1 rounded-none border-0 px-0 text-[13px] text-ink shadow-none placeholder:text-quiet focus-visible:ring-0 md:text-[13px] dark:bg-transparent"
       />
       {/* A plan's job says its step in the engine's words, as the prompt step's footer does. */}
-      <span aria-live="polite" className="truncate text-[11px] text-quiet">
+      <span aria-live="polite" className="truncate text-[12px] text-quiet">
         {!busy ? (
           <span aria-hidden>Ctrl L</span>
         ) : asked === null ? (
@@ -151,6 +152,22 @@ export function ChangeInWords({
           'Making the change…'
         )}
       </span>
+      {asked !== null && (
+        // The sentence stays in the field, with the cursor, to change and send again.
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-label="Stop the change"
+          onClick={() => {
+            field.current?.focus()
+            stopThinking(folder)
+          }}
+          className="-mr-1.5 flex-none text-[12px] font-bold text-ink"
+        >
+          Stop
+        </Button>
+      )}
     </label>
   )
 }

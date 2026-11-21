@@ -15,7 +15,7 @@ import type { EditResult } from './useStoryboard'
 /** The tag on a chapter the editor suggested, until the creator renames or keeps it. */
 export function Suggested(): React.JSX.Element {
   return (
-    <span className="rounded-sm bg-plain px-2 py-0.5 text-[11px] font-normal tracking-normal text-quiet">
+    <span className="rounded-sm bg-plain px-2 py-0.5 text-[12px] font-normal tracking-normal text-quiet">
       Suggested
     </span>
   )

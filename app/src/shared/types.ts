@@ -149,7 +149,8 @@ export type BuildEvent =
   /** The report and its checks are written; the preview follows in the same run. */
   | { type: 'built' }
   /** A thinking job adds what it made (`result`), that the storyboard changed outside the app (`changed`),
-   *  or that the thinker said the change cannot be made in words (`refused`). */
+   *  or that the thinker said the change cannot be made in words (`refused`). A job the creator stopped
+   *  says so (`stopped`). */
   | {
       type: 'done'
       ok: boolean
@@ -157,6 +158,7 @@ export type BuildEvent =
       result?: Record<string, unknown>
       changed?: true
       refused?: true
+      stopped?: true
     }
 
 export type Thinking = 'auto' | 'agent:claude' | 'agent:opencode' | 'key'
@@ -217,6 +219,8 @@ export interface FrameflowApi {
   newVideo(prompt: string): Promise<string>
   /** A thinking job. Its `done` event carries `result` for approve and change, and `changed` when refused. */
   think(folder: string, request: ThinkRequest, onEvent: (e: BuildEvent) => void): Promise<void>
+  /** Stops the video's build or thinking job; it ends with a `done` that says `stopped`. */
+  stop(job: 'build' | 'think', folder: string): Promise<boolean>
   editPlan(folder: string, fields: Record<string, unknown>): Promise<Described>
   /** The files the creator picks in the file dialog; none when they cancel. Only these may start a video. */
   chooseFiles(kind: 'footage' | 'assets' | 'music' | 'looks' | 'script'): Promise<string[]>

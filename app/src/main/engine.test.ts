@@ -412,6 +412,43 @@ it('stopAll ends a thinking job, and the programs it started', async () => {
   await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 10000 })
 }, 20000)
 
+it('stop ends a build and the programs it started, done as stopped, not failed', async () => {
+  const folder = join(dir, 'tree')
+  const events: BuildEvent[] = []
+  let pid = 0
+  const running = engine.build(folder, (e) => {
+    events.push(e)
+    if (e.type === 'detail' && e.text.startsWith('started ')) pid = Number(e.text.slice(8))
+  })
+  await vi.waitFor(() => expect(pid).toBeGreaterThan(0), { timeout: 5000 })
+  expect(engine.stop('building', folder)).toBe(true)
+  await running
+  expect(events.at(-1)).toEqual({ type: 'done', ok: false, stopped: true })
+  expect(events.filter((e) => e.type === 'done')).toHaveLength(1) // its process ending says nothing more
+  expect(engine.building(folder)).toBe(false)
+  await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 10000 })
+}, 20000)
+
+it('stop ends a thinking job and the programs it started, done as stopped', async () => {
+  const folder = join(dir, 'tree')
+  const events: BuildEvent[] = []
+  let pid = 0
+  const running = engine.think(folder, ['start', folder], {}, (e) => {
+    events.push(e)
+    if (e.type === 'detail' && e.text.startsWith('started ')) pid = Number(e.text.slice(8))
+  })
+  await vi.waitFor(() => expect(pid).toBeGreaterThan(0), { timeout: 5000 })
+  expect(engine.stop('thinking', folder)).toBe(true)
+  await running
+  expect(events.at(-1)).toEqual({ type: 'done', ok: false, stopped: true })
+  await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 10000 })
+}, 20000)
+
+it('stop with nothing running for the video does nothing', () => {
+  expect(engine.stop('building', join(dir, 'reel'))).toBe(false)
+  expect(engine.stop('thinking', join(dir, 'reel'))).toBe(false)
+})
+
 it('thinkArgs gives each free text as one argument, so words starting with a dash stay words', () => {
   expect(thinkArgs('C:/v', { kind: 'plan-change', words: '--shorter, please' }, [])).toEqual([
     'plan-change',

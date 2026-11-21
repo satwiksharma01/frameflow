@@ -1,9 +1,9 @@
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { rectSortingStrategy, SortableContext } from '@dnd-kit/sortable'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CommandPalette } from '../shell/CommandPalette'
-import { say } from '../shell/Toasts'
+import { say } from '../shell/say'
 import { ChangeInWords, type ChangeInWordsHandle } from '../words/ChangeInWords'
 import { AddScene } from './AddScene'
 import { ChapterHeading } from './ChapterHeading'
@@ -85,7 +85,12 @@ export function Storyboard({
   const state = useStoryboard(folder)
   const [selected, setSelected] = useState(initialSelected ?? 1)
   const scenesBox = useRef<HTMLDivElement>(null)
-  useEffect(() => setSelected(initialSelected ?? 1), [folder, initialSelected])
+  // Another video, or another scene asked for, starts on its own scene.
+  const [asked, setAsked] = useState({ folder, initialSelected })
+  if (asked.folder !== folder || asked.initialSelected !== initialSelected) {
+    setAsked({ folder, initialSelected })
+    setSelected(initialSelected ?? 1)
+  }
   useEffect(() => onSelected?.(selected), [selected, onSelected])
   // A small movement first, so a click still selects and only a deliberate drag moves.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -119,8 +124,10 @@ export function Storyboard({
   // one gives way to the scene that took its place, and an added one is selected.
   // A refusal with no field of its own to show it in is said in a toast, as is one whose field went with
   // its scene's panel before the answer came (the words are sent when the creator clicks another scene).
-  const shown = useRef(selected)
-  shown.current = selected
+  const shown = useRef(selected) // the scene selected when an answer comes
+  useEffect(() => {
+    shown.current = selected
+  }, [selected])
   const change = async (op: EditOp, said?: string): Promise<EditResult> => {
     setSelected(selectAfter(op, selected, scenes.length))
     const result = await state.edit(op, said)
@@ -189,18 +196,17 @@ export function Storyboard({
 
   // Undo, redo and the palette work wherever the focus is, except in a field, which keeps its own Ctrl+Z.
   // Esc stops a scene playing, wherever the focus is.
-  const latest = useRef(perform)
-  latest.current = perform
+  const onWindowKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === 'Escape') details.current?.stop()
+    const action = actionFor(event, inTextField(event.target))
+    if (action !== 'undo' && action !== 'redo' && action !== 'palette') return
+    event.preventDefault()
+    perform(action)
+  })
   useEffect(() => {
-    const onWindowKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') details.current?.stop()
-      const action = actionFor(event, inTextField(event.target))
-      if (action !== 'undo' && action !== 'redo' && action !== 'palette') return
-      event.preventDefault()
-      latest.current(action)
-    }
-    window.addEventListener('keydown', onWindowKey)
-    return () => window.removeEventListener('keydown', onWindowKey)
+    const listener = (event: KeyboardEvent): void => onWindowKey(event)
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
   }, [])
 
   // Once a field is sent or let go from the keyboard, the keys work on the scenes again.
@@ -270,12 +276,10 @@ export function Storyboard({
             }}
           >
             <SortableContext items={scenes.map((s) => s.key)} strategy={rectSortingStrategy}>
-              <div
-                role="listbox"
-                aria-label="Scenes"
-                aria-orientation="horizontal"
-                onKeyDown={onKeyDown}
-              >
+              {/* Each chapter a section under its heading, its scenes a numbered list of buttons. The list
+                  and its items lay out as the grid's own cells, so Add a scene is the grid's last cell
+                  without being one of the scenes. */}
+              <div role="group" aria-label="Scenes" onKeyDown={onKeyDown}>
                 {view.sections.map((section) => (
                   <section
                     key={section.number}
@@ -290,16 +294,19 @@ export function Storyboard({
                       className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-5 gap-y-6"
                       style={section.title === null ? { marginTop: 28 } : undefined}
                     >
-                      {section.scenes.map((scene) => (
-                        <SceneModule
-                          key={scene.key}
-                          scene={scene}
-                          folder={folder}
-                          aspect={described.aspect}
-                          selected={scene.number === selected}
-                          onSelect={() => select(scene.number)}
-                        />
-                      ))}
+                      <ol className="contents">
+                        {section.scenes.map((scene) => (
+                          <li key={scene.key} className="contents">
+                            <SceneModule
+                              scene={scene}
+                              folder={folder}
+                              aspect={described.aspect}
+                              selected={scene.number === selected}
+                              onSelect={() => select(scene.number)}
+                            />
+                          </li>
+                        ))}
+                      </ol>
                       <AddScene
                         after={section.scenes.at(-1)?.number ?? 0}
                         edit={change}

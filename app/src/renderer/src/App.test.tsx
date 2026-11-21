@@ -50,7 +50,7 @@ it('the storyboard’s headings step down one level at a time, with chapters or 
       looks: async () => []
     } as never
     const { unmount } = render(<App />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     const found = screen.getAllByRole('heading').map((h) => Number(h.tagName.slice(1)))
     unmount()
     return found
@@ -81,19 +81,20 @@ describe('the steps', () => {
 
   it('the Video step opens the video screen, and Storyboard comes back with the same scene selected', async () => {
     render(<App />)
-    await userEvent.click(await screen.findByRole('option', { name: /^Scene 4\b/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Scene 4:/ }))
     expect(step('Storyboard')).toHaveAttribute('aria-current', 'step')
     expect(step('Prompt')).toBeEnabled()
     await userEvent.click(step('Video'))
     expect(step('Video')).toHaveAttribute('aria-current', 'step')
     expect(step('Storyboard')).not.toHaveAttribute('aria-current')
     expect(await screen.findByRole('region', { name: 'The video' })).toBeInTheDocument()
-    expect(screen.queryByRole('listbox', { name: 'Scenes' })).toBeNull()
+    // The storyboard's scenes are gone; the video screen's own rules are named without the words.
+    expect(screen.queryByRole('button', { name: /^Scene \d+:/ })).toBeNull()
     await userEvent.keyboard(' ') // the keys work on the video screen at once
     expect(document.querySelector('video')!.paused).toBe(false)
     await userEvent.click(step('Storyboard'))
-    const four = await screen.findByRole('option', { name: /^Scene 4\b/ })
-    expect(four).toHaveAttribute('aria-selected', 'true')
+    const four = await screen.findByRole('button', { name: /^Scene 4:/ })
+    expect(four).toHaveAttribute('aria-current', 'true')
     await waitFor(() => expect(four).toHaveFocus())
   })
 
@@ -102,7 +103,7 @@ describe('the steps', () => {
     Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true })
     try {
       render(<App />)
-      await screen.findAllByRole('option')
+      await screen.findAllByRole('button', { name: /^Scene \d+:/ })
       expect(animate).not.toHaveBeenCalled()
       await userEvent.click(step('Video'))
       expect(animate).toHaveBeenLastCalledWith(
@@ -169,15 +170,15 @@ describe('settings', () => {
       settings
     } as never
     render(<App />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.keyboard('{Control>}k{/Control}')
     await userEvent.click(await screen.findByRole('option', { name: 'Settings' }))
     expect(await page()).toBeInTheDocument()
-    expect(screen.queryByRole('listbox', { name: 'Scenes' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Scenes' })).toBeNull()
     const video = screen.getByRole('button', { name: 'Editing tier list' })
     expect(video).not.toHaveAttribute('aria-current')
     await userEvent.click(video)
-    expect(await screen.findByRole('listbox', { name: 'Scenes' })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'Scenes' })).toBeInTheDocument()
     expect(video).toHaveAttribute('aria-current', 'page')
     expect(gear()).not.toHaveAttribute('aria-current')
   })
@@ -241,7 +242,7 @@ describe('the prompt step', () => {
       think: fake.think
     } as never
     render(<App />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(button('New video'))
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('New video')
     expect(button('New video')).toHaveAttribute('aria-current', 'page')
@@ -282,7 +283,7 @@ describe('the prompt step', () => {
     expect(fake.think).toHaveBeenCalledWith(FOLDER, { kind: 'approve' }, expect.any(Function))
     written = true
     await fake.end({ type: 'done', ok: true, result: { storyboard: `${FOLDER}\\storyboard.json` } })
-    expect(await screen.findByRole('listbox', { name: 'Scenes' })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'Scenes' })).toBeInTheDocument()
     expect(step('Storyboard')).toHaveAttribute('aria-current', 'step')
     expect(step('Video')).toBeEnabled()
     // Watched as it was written, a first storyboard needs no toast: there is nothing to undo.
@@ -311,7 +312,7 @@ describe('the prompt step', () => {
       undo
     } as never
     render(<App />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(step('Prompt'))
     expect(await screen.findByText(pitch.audience)).toBeVisible()
     const approve = button('Approve and write the storyboard')
@@ -321,7 +322,7 @@ describe('the prompt step', () => {
     await waitFor(() => expect(approve).toBeEnabled())
     await userEvent.click(approve)
     await fake.end({ type: 'done', ok: true, result: { storyboard: 'storyboard.json' } })
-    expect(await screen.findByRole('listbox', { name: 'Scenes' })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'Scenes' })).toBeInTheDocument()
     expect(await screen.findByText('The storyboard is written')).toBeInTheDocument()
     const reads = describe.mock.calls.length
     await userEvent.click(button('Undo'))
@@ -355,16 +356,16 @@ describe('the prompt step', () => {
         edit
       } as never
       render(<App />)
-      await screen.findAllByRole('option')
+      await screen.findAllByRole('button', { name: /^Scene \d+:/ })
       await userEvent.click(step('Prompt'))
       await userEvent.click(
         await screen.findByRole('button', { name: 'Approve and write the storyboard' })
       )
       await userEvent.click(step('Storyboard')) // as the screen invites: you can leave
-      await screen.findAllByRole('option')
+      await screen.findAllByRole('button', { name: /^Scene \d+:/ })
       version = 'v3' // what the Approve wrote, or what changed under it
       await fake.end(done)
-      await userEvent.click(await screen.findByRole('option', { name: /^Scene 4\b/ }))
+      await userEvent.click(await screen.findByRole('button', { name: /^Scene 4:/ }))
       await userEvent.keyboard('{Delete}')
       await waitFor(() =>
         expect(edit).toHaveBeenCalledWith(reel.folder, { op: 'delete', number: 4 }, 'v3')
@@ -387,7 +388,7 @@ describe('the prompt step', () => {
       'make it 30 seconds{Enter}'
     )
     await userEvent.click(button('Editing tier list'))
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await fake.end({ type: 'done', ok: true })
     expect(await screen.findByText('The plan is written')).toBeInTheDocument()
     expect(screen.getByText('Frameflow pitch')).toBeInTheDocument()

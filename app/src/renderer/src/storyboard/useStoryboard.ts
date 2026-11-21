@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Described, EditAnswer, EditOp } from '@shared/types'
-import { say } from '../shell/Toasts'
+import { say } from '../shell/say'
 
 export type EditResult = { ok: true; notes: string[] } | { ok: false; refused: string }
 
@@ -50,9 +50,8 @@ export function useStoryboard(folder: string): StoryboardState {
   }, [])
 
   const reload = useCallback(
-    (quiet = true) => {
-      if (!quiet) setStatus('loading')
-      return window.frameflow.describe(folder).then(
+    () =>
+      window.frameflow.describe(folder).then(
         (d) => {
           show(d)
           setStatus('ready')
@@ -61,14 +60,19 @@ export function useStoryboard(folder: string): StoryboardState {
           setMessage(e.message)
           setStatus('failed')
         }
-      )
-    },
+      ),
     [folder, show]
   )
+  // Another video is read afresh: it is loading from the first look at it.
+  const [shownFolder, setShownFolder] = useState(folder)
+  if (shownFolder !== folder) {
+    setShownFolder(folder)
+    setStatus('loading')
+  }
   useEffect(() => {
     latest.current = null
     queue.current = Promise.resolve()
-    void reload(false)
+    void reload()
   }, [reload])
 
   /** Run `send` after every change before it, against the storyboard those changes left. */

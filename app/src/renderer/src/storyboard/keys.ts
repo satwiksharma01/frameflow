@@ -28,7 +28,8 @@ export function actionFor(e: Keys, inField: boolean): Action | null {
   if (command && key === 'z') return e.shiftKey ? 'redo' : 'undo'
   if (e.ctrlKey && key === 'y') return 'redo'
   if (command) return null
-  if (e.altKey) return key === 'ArrowLeft' ? 'move-earlier' : key === 'ArrowRight' ? 'move-later' : null
+  if (e.altKey)
+    return key === 'ArrowLeft' ? 'move-earlier' : key === 'ArrowRight' ? 'move-later' : null
   const plain: Record<string, Action> = {
     ArrowRight: 'next',
     ArrowLeft: 'previous',

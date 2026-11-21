@@ -65,7 +65,7 @@ export function SceneRules({ scenes, current, at, onJump }: Props): React.JSX.El
             <span
               aria-hidden
               className={cn(
-                'mt-2 block whitespace-nowrap text-[11px] leading-[14px] text-quiet',
+                'mt-2 block whitespace-nowrap text-[12px] leading-[14px] text-quiet',
                 state === 'current' && 'font-bold text-ink'
               )}
             >

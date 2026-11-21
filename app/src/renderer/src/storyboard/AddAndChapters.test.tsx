@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { Mock } from 'vitest'
 import type { Described, EditAnswer, EditOp, Scene } from '@shared/types'
 import { AddScene } from './AddScene'
 import { ChapterHeading } from './ChapterHeading'
@@ -10,8 +11,8 @@ import { Storyboard } from './Storyboard'
 import type { EditResult } from './useStoryboard'
 
 const FOLDER = 'E:\\my projects\\frameflow\\output\\reference-swap'
-const ok = () =>
-  vi.fn(async (_op: EditOp, _toast?: string): Promise<EditResult> => ({ ok: true, notes: [] }))
+const ok = (): Mock<(op: EditOp, toast?: string) => Promise<EditResult>> =>
+  vi.fn(async () => ({ ok: true, notes: [] }))
 
 async function choose(item: string): Promise<void> {
   await userEvent.click(screen.getByRole('button', { name: 'Add a scene' }))
@@ -37,7 +38,7 @@ it('a title added at the end of a chapter is selected, with its words on screen 
   const edit = vi.fn(async (): Promise<EditAnswer> => ({ described: answer, notes: [] }))
   window.frameflow = { describe: async () => tierList, edit, thumbnail: async () => null } as never
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   const problem = screen.getByRole('heading', { name: /Problem/ }).closest('section')!
   await userEvent.click(within(problem).getByRole('button', { name: 'Add a scene' }))
   await userEvent.click(await screen.findByRole('menuitem', { name: 'A title' }))
@@ -47,8 +48,8 @@ it('a title added at the end of a chapter is selected, with its words on screen 
     'v1'
   )
   await waitFor(() =>
-    expect(screen.getByRole('option', { name: /^Scene 6\b/ })).toHaveAttribute(
-      'aria-selected',
+    expect(screen.getByRole('button', { name: /^Scene 6:/ })).toHaveAttribute(
+      'aria-current',
       'true'
     )
   )

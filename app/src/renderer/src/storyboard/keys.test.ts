@@ -1,7 +1,14 @@
-import { actionFor } from './keys'
+import { actionFor, type Action } from './keys'
 
-const press = (key: string, mods: Partial<Record<'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey', boolean>> = {}, inField = false) =>
-  actionFor({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods }, inField)
+const press = (
+  key: string,
+  mods: Partial<Record<'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey', boolean>> = {},
+  inField = false
+): Action | null =>
+  actionFor(
+    { key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods },
+    inField
+  )
 
 it('arrows move the selection, Home and End go to the ends', () => {
   expect([press('ArrowRight'), press('ArrowLeft'), press('ArrowDown'), press('ArrowUp')]).toEqual([
@@ -19,7 +26,11 @@ it('Alt and an arrow move the scene itself', () => {
 })
 
 it('Delete and Backspace delete, Enter opens the words', () => {
-  expect([press('Delete'), press('Backspace'), press('Enter')]).toEqual(['delete', 'delete', 'edit-words'])
+  expect([press('Delete'), press('Backspace'), press('Enter')]).toEqual([
+    'delete',
+    'delete',
+    'edit-words'
+  ])
 })
 
 it('Ctrl or Cmd Z undoes, with Shift or Ctrl Y it redoes', () => {

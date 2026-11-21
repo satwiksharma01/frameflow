@@ -22,7 +22,7 @@ function panel(
   scene: SceneView,
   edit = vi.fn(async (): Promise<EditResult> => ({ ok: true, notes: [] })),
   file: string | null = null
-) {
+): typeof edit {
   window.frameflow = { thumbnail: async () => null, chooseFile: vi.fn(async () => file) } as never
   render(<DetailsPanel scene={scene} folder={FOLDER} aspect="9:16" edit={edit} />)
   return edit

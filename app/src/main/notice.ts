@@ -3,7 +3,8 @@
 import type { BuildEvent, ThinkRequest } from '../shared/types'
 
 /** Follows one run's events. A video is built once its checks are written, so a run that fails or is
- *  stopped while its preview renders says nothing more; one that fails before then could not be built. */
+ *  stopped while its preview renders says nothing more; one that fails before then could not be built.
+ *  One the creator stopped says nothing: they know. */
 export function noticeFor(): (e: BuildEvent) => 'is built' | 'could not be built' | null {
   let built = false
   return (e) => {
@@ -11,14 +12,14 @@ export function noticeFor(): (e: BuildEvent) => 'is built' | 'could not be built
       built = true
       return 'is built'
     }
-    return e.type === 'done' && !e.ok && !built ? 'could not be built' : null
+    return e.type === 'done' && !e.ok && !e.stopped && !built ? 'could not be built' : null
   }
 }
 
 /** What a thinking job's desktop notice says when it ends. A change in words says what it did in the
  *  window, so only the plan's jobs and Approve are told. */
 export function thoughtNotice(kind: ThinkRequest['kind'], e: BuildEvent): string | null {
-  if (e.type !== 'done' || kind === 'change') return null
+  if (e.type !== 'done' || e.stopped || kind === 'change') return null
   const what = kind === 'approve' ? 'storyboard' : 'plan'
   return e.ok ? `the ${what} is written` : `the ${what} could not be written`
 }

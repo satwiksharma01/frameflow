@@ -5,9 +5,18 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { Described, SettingsView, ThinkRequest } from '@shared/types'
-import { say } from '../shell/Toasts'
+import { say } from '../shell/say'
+import { StopButton } from '../storyboard/BuildBar'
 import { Figures, Label, PlanView } from './PlanView'
-import { forgetFailure, think, thinker, useThought, type Done, type Start } from './thinking'
+import {
+  forgetFailure,
+  stopThinking,
+  think,
+  thinker,
+  useThought,
+  type Done,
+  type Start
+} from './thinking'
 
 type Kind = 'footage' | 'assets' | 'music' | 'script' | 'looks'
 const MATERIAL: [Kind, string][] = [
@@ -37,7 +46,7 @@ function Steps({ steps }: { steps: string[] }): React.JSX.Element {
             aria-current={now ? 'step' : undefined}
             className={cn('flex items-baseline gap-3', now ? 'font-medium text-ink' : 'text-quiet')}
           >
-            <span className="w-[18px] flex-none text-[11px] font-normal text-quiet">
+            <span className="w-[18px] flex-none text-[12px] font-normal text-quiet">
               {String(i + 1).padStart(2, '0')}
             </span>
             {now ? `${step}…` : step}
@@ -380,6 +389,19 @@ export function PromptStep({
             className="h-10 max-w-[520px] flex-1 rounded-lg border-dim px-3.5 text-[13px] text-ink placeholder:text-quiet md:text-[13px] dark:bg-transparent"
           />
         )}
+        <StopButton
+          label={
+            thought.kind === 'approve'
+              ? 'Stop writing the storyboard'
+              : thought.kind === 'change'
+                ? 'Stop the change'
+                : 'Stop writing the plan'
+          }
+          running={running}
+          onStop={() => stopThinking(folder!)}
+          after={top}
+          className="ml-auto"
+        />
         {fresh ? (
           <Button
             disabled={!asked.prompt.trim() || making}
@@ -393,7 +415,7 @@ export function PromptStep({
             <Button
               disabled={!plan || running || questions > 0 || !approvable}
               onClick={() => run(folder!, { kind: 'approve' })}
-              className={MAIN}
+              className={cn(MAIN, running && 'ml-0')} // Stop, before it, takes the space
             >
               Approve and write the storyboard
             </Button>

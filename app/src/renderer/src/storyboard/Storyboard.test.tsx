@@ -21,13 +21,13 @@ function engine(
 }
 
 const scene = (n: number): HTMLElement =>
-  screen.getByRole('option', { name: new RegExp(`^Scene ${n}\\b`) })
+  screen.getByRole('button', { name: new RegExp(`^Scene ${n}:`) })
 
 it('shows nine scenes in three chapters, with the count and the running time', async () => {
   engine(tierList)
   render(<Storyboard folder={FOLDER} />)
-  expect(await screen.findAllByRole('option')).toHaveLength(9)
-  const list = screen.getByRole('listbox', { name: 'Scenes' }) // the details panel has its own heading
+  expect(await screen.findAllByRole('button', { name: /^Scene \d+:/ })).toHaveLength(9)
+  const list = screen.getByRole('group', { name: 'Scenes' }) // the details panel has its own heading
   expect(
     within(list)
       .getAllByRole('heading', { level: 2 })
@@ -45,11 +45,13 @@ it('shows nine scenes in three chapters, with the count and the running time', a
 it("the selected scene's rule is the only red one, and the details panel shows its words", async () => {
   engine(tierList)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
-  expect(scene(1)).toHaveAttribute('aria-selected', 'true')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
+  expect(scene(1)).toHaveAttribute('aria-current', 'true')
   await userEvent.click(scene(6))
   expect(
-    screen.getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true')
+    screen
+      .getAllByRole('button', { name: /^Scene \d+:/ })
+      .filter((o) => o.getAttribute('aria-current') === 'true')
   ).toEqual([scene(6)])
   expect(document.querySelectorAll('[data-rule="selected"]')).toHaveLength(1)
   expect(scene(6).querySelector('[data-rule="selected"]')).not.toBeNull()
@@ -61,33 +63,46 @@ it("the selected scene's rule is the only red one, and the details panel shows i
 it('Right moves the selection to the next scene, End to the last, Home to the first', async () => {
   engine(tierList)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   scene(1).focus()
   await userEvent.keyboard('{ArrowRight}')
-  expect(scene(2)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(2)).toHaveAttribute('aria-current', 'true')
   expect(scene(2)).toHaveFocus()
   await userEvent.keyboard('{End}')
-  expect(scene(9)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(9)).toHaveAttribute('aria-current', 'true')
   await userEvent.keyboard('{ArrowRight}')
-  expect(scene(9)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(9)).toHaveAttribute('aria-current', 'true')
   await userEvent.keyboard('{Home}')
-  expect(scene(1)).toHaveAttribute('aria-selected', 'true')
+  expect(scene(1)).toHaveAttribute('aria-current', 'true')
 })
 
 it('scene 6 says it may clip a word; no other scene shows a check', async () => {
   engine(tierList)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(within(scene(6)).getByText('May clip “work”')).toBeInTheDocument()
   expect(
-    screen.getAllByRole('option').filter((o) => /May clip/.test(o.textContent ?? ''))
+    screen
+      .getAllByRole('button', { name: /^Scene \d+:/ })
+      .filter((o) => /May clip/.test(o.textContent ?? ''))
   ).toHaveLength(1)
+})
+
+it('a screen reader hears each scene’s length, and what to check where there is something', async () => {
+  engine(tierList)
+  render(<Storyboard folder={FOLDER} />)
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
+  expect(scene(6)).toHaveAccessibleDescription(
+    expect.stringMatching(/^2\.7 seconds\. Check: May clip “work”\. To move a scene/)
+  )
+  expect(scene(1)).toHaveAccessibleDescription(expect.stringMatching(/^\d+\.\d seconds\./))
+  expect(scene(1)).not.toHaveAccessibleDescription(expect.stringContaining('Check'))
 })
 
 it('a scene holding two suspect cuts shows both on its card and in the details panel', async () => {
   engine(twoCuts)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await userEvent.click(scene(6))
   const details = screen.getByRole('complementary', { name: 'Scene 6' })
   for (const check of ['May clip “all”', 'May clip “work”']) {
@@ -99,7 +114,7 @@ it('a scene holding two suspect cuts shows both on its card and in the details p
 it('a video not built yet says "about" and shows no start times', async () => {
   engine(unbuilt)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(screen.getByRole('group', { name: 'Length' })).toHaveTextContent('about 20.1/20 seconds')
   expect(scene(1)).not.toHaveTextContent('0:00')
   expect(scene(1)).toHaveTextContent('1.5 s')
@@ -108,8 +123,8 @@ it('a video not built yet says "about" and shows no start times', async () => {
 it('a storyboard without chapters has no chapter headings and no index', async () => {
   engine({ ...tierList, sections: [] })
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
-  const list = screen.getByRole('listbox', { name: 'Scenes' })
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
+  const list = screen.getByRole('group', { name: 'Scenes' })
   expect(within(list).queryByRole('heading', { level: 2 })).toBeNull()
   expect(screen.queryByRole('navigation', { name: 'Chapters' })).toBeNull()
 })
@@ -136,7 +151,7 @@ it("an engine failure shows the engine's words, and Try again asks again", async
 it('a scene with no picture of its own shows its number on a plain frame', async () => {
   engine(tierList, async () => null)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   await waitFor(() => expect(scene(3).querySelector('[data-frame="plain"]')).toHaveTextContent('3'))
   expect(scene(3).querySelector('img')).toBeNull()
 })
@@ -146,7 +161,7 @@ it('a thumbnail is not asked for until its scene is near the viewport', async ()
   const thumbnail = vi.fn(async () => 'ff-media://thumb/?p=x.jpg')
   engine(tierList, thumbnail)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(thumbnail).not.toHaveBeenCalled()
   observers.show(scene(4).querySelector('[data-frame]')!)
   await waitFor(() => expect(thumbnail).toHaveBeenCalledWith(FOLDER, 'scene-4'))
@@ -163,7 +178,7 @@ it('a title scene shows its words in its frame, and asks for no picture', async 
   )
   engine({ ...tierList, scenes }, thumbnail)
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(scene(2).querySelector('[data-frame="title"]')).toHaveTextContent(
     'Where does your week go?'
   )
@@ -175,7 +190,7 @@ it('a scene whose length is not known yet draws no rule', async () => {
   const scenes = unbuilt.scenes.map((s) => (s.number === 3 ? { ...s, seconds: null } : s))
   engine({ ...unbuilt, scenes })
   render(<Storyboard folder={FOLDER} />)
-  await screen.findAllByRole('option')
+  await screen.findAllByRole('button', { name: /^Scene \d+:/ })
   expect(scene(3).querySelector('[data-rule]')).toBeNull()
   expect(scene(4).querySelector('[data-rule]')).not.toBeNull()
 })
@@ -191,7 +206,7 @@ describe('playing', () => {
   it('Space plays the selected scene from its start and stops at its end', async () => {
     engine({ ...tierList, preview: PREVIEW })
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     const picture = screen
       .getByRole('complementary', { name: 'Scene 6' })
@@ -213,7 +228,7 @@ describe('playing', () => {
   it('Space again, or Esc, stops it, and the arrows still move the selection', async () => {
     engine({ ...tierList, preview: PREVIEW })
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard(' ')
     expect(video()).not.toBeNull()
@@ -225,7 +240,7 @@ describe('playing', () => {
     expect(video()).toBeNull()
     expect(scene(6)).toHaveFocus()
     await userEvent.keyboard('{ArrowRight}')
-    expect(scene(7)).toHaveAttribute('aria-selected', 'true')
+    expect(scene(7)).toHaveAttribute('aria-current', 'true')
   })
 
   it('Space on a video changed since its build says to build it, and plays nothing', async () => {
@@ -236,7 +251,7 @@ describe('playing', () => {
         <Toasts />
       </>
     )
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard(' ')
     expect(await screen.findByText('Build the video to play its scenes.')).toBeInTheDocument()
@@ -261,11 +276,11 @@ describe('the keyboard', () => {
   it('Alt+Right moves the selected scene later and keeps it selected', async () => {
     const edit = editing()
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(2))
     await userEvent.keyboard('{Alt>}{ArrowRight}{/Alt}')
     expect(edit).toHaveBeenCalledWith(FOLDER, { op: 'move', from: 2, to: 3 }, 'v1')
-    await waitFor(() => expect(scene(3)).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(scene(3)).toHaveAttribute('aria-current', 'true'))
   })
 
   it('Delete removes the selected scene and offers Undo', async () => {
@@ -276,7 +291,7 @@ describe('the keyboard', () => {
         <Toasts />
       </>
     )
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(4))
     await userEvent.keyboard('{Delete}')
     expect(edit).toHaveBeenCalledWith(FOLDER, { op: 'delete', number: 4 }, 'v1')
@@ -298,7 +313,7 @@ describe('the keyboard', () => {
         <Toasts />
       </>
     )
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(1))
     await userEvent.keyboard('{Delete}')
     expect(await screen.findByText(refused)).toBeInTheDocument()
@@ -307,7 +322,7 @@ describe('the keyboard', () => {
   it('keys pressed on a chapter menu or an add tile stay theirs', async () => {
     const edit = editing()
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     screen.getAllByRole('button', { name: 'Add a scene' })[0].focus()
     await userEvent.keyboard('{Delete}')
     expect(edit).not.toHaveBeenCalled()
@@ -316,7 +331,7 @@ describe('the keyboard', () => {
   it('Enter opens the selected scene’s words for typing', async () => {
     editing()
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'What is said' })).toHaveFocus())
@@ -325,7 +340,7 @@ describe('the keyboard', () => {
   it('after the words are sent with Enter, or left with Esc, the arrows move the selection again', async () => {
     const edit = editing()
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard('{Enter}')
     const field = await screen.findByRole('textbox', { name: 'What is said' })
@@ -339,13 +354,13 @@ describe('the keyboard', () => {
     await waitFor(() => expect(scene(6)).toHaveFocus())
     expect(edit).toHaveBeenCalledTimes(1) // Esc sent nothing
     await userEvent.keyboard('{ArrowRight}')
-    expect(scene(7)).toHaveAttribute('aria-selected', 'true')
+    expect(scene(7)).toHaveAttribute('aria-current', 'true')
   })
 
   it('after a chapter is renamed with Enter the focus is back on the selected scene, and Esc sends nothing', async () => {
     const edit = editing()
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(2))
     await userEvent.click(screen.getByRole('button', { name: 'Turn' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Chapter name' })).toHaveFocus())
@@ -372,7 +387,7 @@ describe('the keyboard', () => {
         <Toasts />
       </>
     )
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'What is said' })).toHaveFocus())
@@ -389,7 +404,7 @@ describe('the keyboard', () => {
       thumbnail: async () => null
     } as never
     render(<Storyboard folder={FOLDER} />)
-    await screen.findAllByRole('option')
+    await screen.findAllByRole('button', { name: /^Scene \d+:/ })
     await userEvent.click(scene(6))
     await userEvent.keyboard('{Enter}')
     const field = await screen.findByRole('textbox', { name: 'What is said' })

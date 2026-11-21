@@ -2,9 +2,10 @@
 // can be tested.
 import { basename, dirname, extname, isAbsolute, relative, resolve } from 'path'
 
+// Only a full path: a relative one would be resolved against the app's folder here, the repository in the engine.
 export function inside(parent: string, path: string): boolean {
   const rel = relative(parent, path)
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  return isAbsolute(path) && rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
 }
 
 /** The thumbnail a `ff-media` URL names, under one of the videos in `videos`; null for anything else.

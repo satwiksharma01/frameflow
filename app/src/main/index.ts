@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, protocol, session } from 'electron'
+import { app, shell, BrowserWindow, protocol, screen, session } from 'electron'
 import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -26,11 +26,13 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow(): void {
+  // Within the screen above the taskbar: a 15-inch laptop at 150% leaves about 1280 × 672.
+  const area = screen.getPrimaryDisplay().workAreaSize
   const mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1100,
-    minHeight: 700,
+    width: Math.min(1440, area.width),
+    height: Math.min(900, area.height),
+    minWidth: 960,
+    minHeight: 560,
     show: false,
     backgroundColor: '#0e0e0e',
     autoHideMenuBar: true,
@@ -61,7 +63,10 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.frameflow.app')
-  app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
+  // Ctrl and minus or plus zoom the window, as in a browser, for a creator who needs larger text.
+  app.on('browser-window-created', (_, window) =>
+    optimizer.watchWindowShortcuts(window, { zoom: true })
+  )
   // The window asks for nothing: no camera, microphone or location. Notices come from here, not the page.
   session.defaultSession.setPermissionRequestHandler((_, __, answer) => answer(false))
   registerIpc(engine, root, page)

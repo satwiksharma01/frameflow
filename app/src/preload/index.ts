@@ -48,6 +48,7 @@ const api: FrameflowApi = {
   testThinking: (onEvent) => job('ff:test-thinking', '', onEvent), // its events come under no folder
   newVideo: (prompt) => ask('ff:new-video', prompt),
   think: (folder, request, onEvent) => job('ff:think', folder, onEvent, request),
+  stop: (which, folder) => ask('ff:stop', which, folder),
   editPlan: (folder, fields) => ask('ff:edit-plan', folder, fields),
   chooseFiles: (kind) => ask('ff:choose-files', kind)
 }

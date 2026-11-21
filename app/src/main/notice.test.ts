@@ -54,3 +54,10 @@ it('a thinking job tells when its plan or its storyboard is written, or could no
   // A change in words says what it did in the window.
   expect(thoughtNotice('change', done)).toBeNull()
 })
+
+it('a job the creator stopped gives no notice: they stopped it themselves', () => {
+  const stopped = { type: 'done', ok: false, stopped: true } as const
+  expect(notices([{ type: 'step', text: 'Building the project' }, stopped])).toEqual([null, null])
+  expect(thoughtNotice('start', stopped)).toBeNull()
+  expect(thoughtNotice('approve', stopped)).toBeNull()
+})

@@ -33,7 +33,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Run the app's tests
         working-directory: app
-        run: npm ci && npm run typecheck && npm test
+        run: npm ci && npm run typecheck && npm run lint -- --max-warnings 0 && npm test
       - name: Run Agent Video's tests (only exercised on Windows so far)
         if: runner.os == 'Windows'
         working-directory: agent-video

@@ -21,6 +21,9 @@ export interface Engine {
     onEvent: (e: BuildEvent) => void
   ): Promise<void>
   building(folder: string): boolean
+  /** Stops a video's build or thinking job and what it started; its `done` says it was stopped. False
+   *  when none is running. */
+  stop(job: 'building' | 'thinking', folder: string): boolean
   stopAll(): void
 }
 
@@ -82,7 +85,10 @@ export function createEngine({
   timeout?: number
 }): Engine {
   // By `building <folder>`, `opening <folder>` and `thinking <folder>`. A build is previewing once its report is written.
-  const jobs = new Map<string, { child: ChildProcess; previewing: boolean; resolve(): void }>()
+  const jobs = new Map<
+    string,
+    { child: ChildProcess; previewing: boolean; resolve(): void; stopped(): void }
+  >()
   const running = new Set<ChildProcess>()
 
   // With `thinker`, the job's thinker is that and nothing the app's own environment says.
@@ -199,7 +205,11 @@ export function createEngine({
     } else if (running) return Promise.reject(new Error(`${folder} is already ${doing}`))
     return new Promise((resolve) => {
       const child = start(args, env)
-      const self = { child, previewing: false, resolve }
+      const stopped = (): void => {
+        onEvent({ type: 'done', ok: false, stopped: true })
+        resolve()
+      }
+      const self = { child, previewing: false, resolve, stopped }
       jobs.set(key, self)
       let pending = ''
       let err = ''
@@ -283,6 +293,14 @@ export function createEngine({
     think: (folder, args, env, onEvent) =>
       job('thinking', folder, ['-m', 'project.app_think', ...args], onEvent, env),
     building: (folder) => jobs.has(`building ${folder}`),
+    stop: (doing, folder) => {
+      const running = jobs.get(`${doing} ${folder}`)
+      if (!running) return false
+      jobs.delete(`${doing} ${folder}`) // what it still prints, and its end, are no longer its own
+      stop(running.child)
+      running.stopped()
+      return true
+    },
     stopAll: () => {
       server = null // a call from now on starts a new engine; the stopping one answers no more
       running.forEach(stop)

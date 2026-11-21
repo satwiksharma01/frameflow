@@ -1,10 +1,19 @@
 // @vitest-environment node
 import { join, resolve, sep } from 'path'
 import { expect, it } from 'vitest'
-import { previewAt, rangeOf, thumbnailAt } from './media'
+import { inside, previewAt, rangeOf, thumbnailAt } from './media'
 
 const videos = resolve('/frameflow/output')
 const url = (path: string): string => `ff-media://thumb/?p=${encodeURIComponent(path)}`
+
+it('a folder is one of the videos only by its full path: a relative one is refused', () => {
+  expect(inside(videos, join(videos, 'reel'))).toBe(true)
+  expect(inside(videos, videos)).toBe(false)
+  // Relative, the app would resolve it against its own folder and the engine against the repository.
+  const here = join(process.cwd(), 'output')
+  expect(inside(here, join(here, 'reel'))).toBe(true)
+  expect(inside(here, join('output', 'reel'))).toBe(false)
+})
 
 it("a video's thumbnail is served", () => {
   const thumb = join(videos, 'reel', 'app_cache', 'thumbs', '0a1b2c3d4e5f.jpg')

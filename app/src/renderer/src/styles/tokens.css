@@ -38,6 +38,9 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 
+  /* The one shadow: a toast, lifted off the screen it speaks over. */
+  --shadow-toast: 0 8px 24px rgb(0 0 0 / 0.4);
+
   /* shadcn/ui's roles, drawn from the same five colours. */
   --color-background: var(--ground);
   --color-foreground: var(--ink);
@@ -93,6 +96,16 @@
     scrollbar-color: var(--line) transparent;
   }
 
+  /* No word left alone on a paragraph's last line, and headings balanced over their lines. */
+  p {
+    text-wrap: pretty;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
   /* Times, in tabular figures so they line up in columns; Inter's keep the point and the colon narrow. */
   .time {
     font-variant-numeric: tabular-nums;
@@ -107,5 +120,16 @@
       animation-iteration-count: 1 !important; /* a looping spinner at 1 ms would strobe */
       transition-duration: 1ms !important;
     }
+
+    /* The running step fades slowly in place of its turn, so a long step still looks alive. */
+    .animate-spin {
+      animation: breathe 2s ease-in-out infinite !important;
+    }
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.4;
   }
 }

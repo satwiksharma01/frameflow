@@ -29,7 +29,7 @@ export function SectionIndex({ sections, current, onJump }: Props): React.JSX.El
             <span className="truncate">{section.title}</span>
             {!section.confirmed && <Suggested />}
           </span>
-          <span className="time col-start-2 text-[11px] text-quiet">
+          <span className="time col-start-2 text-[12px] text-quiet">
             {section.start !== null && `${clock(section.start)} · `}
             {section.scenes.length} {section.scenes.length === 1 ? 'scene' : 'scenes'}
           </span>

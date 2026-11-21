@@ -22,7 +22,8 @@ const stores = new WeakMap<object, { builds: Map<string, Build>; listeners: Set<
 const latest = new Map<string, object>()
 
 function store(): { builds: Map<string, Build>; listeners: Set<() => void> } {
-  if (!stores.has(window.frameflow)) stores.set(window.frameflow, { builds: new Map(), listeners: new Set() })
+  if (!stores.has(window.frameflow))
+    stores.set(window.frameflow, { builds: new Map(), listeners: new Set() })
   return stores.get(window.frameflow)!
 }
 
@@ -35,6 +36,11 @@ export function useBuild(folder: string): Build {
     },
     () => builds.get(folder) ?? IDLE
   )
+}
+
+/** Stop a video's build: it ends as stopped, and Build is offered again. */
+export function stopBuild(folder: string): void {
+  void window.frameflow.stop('build', folder)
 }
 
 /** Start building a video, unless it is building already. */
@@ -52,6 +58,7 @@ export function startBuild(folder: string): void {
   set({ state: 'building', steps: [], detail: '', message: '' })
 
   let ok = false
+  let stopped = false
   let said = ''
   const onEvent = (event: BuildEvent): void => {
     if (event.type === 'step') set({ steps: [...current().steps, event.text], detail: '' })
@@ -60,6 +67,7 @@ export function startBuild(folder: string): void {
       set({ state: 'previewing', steps: [], detail: '', built: current().built + 1 })
     } else {
       ok = event.ok
+      stopped = !!event.stopped
       said = event.message ?? ''
     }
   }
@@ -69,7 +77,8 @@ export function startBuild(folder: string): void {
       said = e.message
     })
     .then(() => {
-      if (ok) set({ state: 'idle', steps: [], detail: '', built: current().built + 1 })
+      // Stopped by the creator: Build is offered again, and what the run left is read again.
+      if (ok || stopped) set({ state: 'idle', steps: [], detail: '', built: current().built + 1 })
       else set({ state: 'failed', message: said || 'The build stopped without saying why.' })
     })
 }

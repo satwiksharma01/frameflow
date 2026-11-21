@@ -27,7 +27,10 @@ export function VideoRail({
   onSettings
 }: Props): React.JSX.Element {
   return (
-    <nav aria-label="Videos" className="flex w-14 flex-none flex-col items-center gap-3 border-r py-3.5">
+    <nav
+      aria-label="Videos"
+      className="flex w-14 flex-none flex-col items-center gap-3 border-r py-3.5"
+    >
       <div
         aria-hidden
         className="mb-2 grid size-8 flex-none place-items-center rounded-md bg-ink text-[13px] font-bold text-ground"
@@ -47,7 +50,9 @@ export function VideoRail({
             onClick={() => onOpen(video.folder)}
             className={cn(
               'flex-none scroll-my-1.5 cursor-pointer rounded-sm outline-offset-[3px] transition-opacity duration-150',
-              video.folder === current ? 'outline outline-[1.5px] outline-ink' : 'opacity-45 hover:opacity-80'
+              video.folder === current
+                ? 'outline outline-[1.5px] outline-ink'
+                : 'opacity-45 hover:opacity-80'
             )}
           >
             <Thumbnail
@@ -55,7 +60,7 @@ export function VideoRail({
               number={1}
               pictureKey={video.cover}
               plain={video.title.charAt(0).toUpperCase()}
-              className="w-8 rounded-sm [&>span]:text-[11px]"
+              className="w-8 rounded-sm [&>span]:text-[12px]"
             />
           </button>
         ))}

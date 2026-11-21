@@ -1,5 +1,5 @@
 import { Headphones, ImageUp, Trash2 } from 'lucide-react'
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -7,7 +7,8 @@ import type { Described, EditOp } from '@shared/types'
 import { LISTEN_AFTER, LISTEN_BEFORE, ScenePlayer } from '../player/ScenePlayer'
 import type { SceneView } from './model'
 import { OverEditor } from './OverEditor'
-import { SHAPES, Thumbnail } from './Thumbnail'
+import { SHAPES } from './shapes'
+import { Thumbnail } from './Thumbnail'
 import type { EditResult } from './useStoryboard'
 import { WordsField, type WordsFieldHandle } from './WordsField'
 
@@ -97,7 +98,11 @@ export function DetailsPanel({
   const listenButton = useRef<HTMLButtonElement>(null) // the Listen last pressed
   const [playing, setPlaying] = useState<{ from: number; to: number } | null>(null)
   // What plays is of this scene and this preview: another scene, or a change, shows the picture again.
-  useEffect(() => setPlaying(null), [scene.key, preview])
+  const [playingOf, setPlayingOf] = useState({ key: scene.key, preview })
+  if (playingOf.key !== scene.key || playingOf.preview !== preview) {
+    setPlayingOf({ key: scene.key, preview })
+    setPlaying(null)
+  }
   const stop = (): void => {
     setPlaying(null)
     if (document.activeElement === listenButton.current) onDone?.()
