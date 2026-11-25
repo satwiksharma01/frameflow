@@ -42,6 +42,17 @@ def _generated(folder: Path) -> tuple[Path, Path]:
     return picture, music
 
 
+def _studied(clip: Path, out_dir: Path) -> dict:
+    """eyes.study stood in for: a two-second clip with nothing flagged, written where prepare looks for it."""
+    study = {"source": Path(clip).as_posix(), "stamp": {"path": Path(clip).as_posix(), "bytes": 0, "mtime_ns": 0},
+             "duration": 2.0, "width": 1080, "height": 1920, "fps": 30.0, "cuts": [], "step": 0.5,
+             "samples": [{"t": 0.0, "sharp": 100.0, "bright": 120.0, "motion": 0.0}], "speech": [],
+             "speech_seconds": 0.0, "sheet": "sheet.jpg"}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "study.json").write_text(json.dumps(study), encoding="utf-8")
+    return study
+
+
 def _tone(path: Path, seconds: float) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i",
@@ -250,6 +261,7 @@ class TestWritingThePlan(_Plan):
         test transcribes."""
         with (mock.patch.object(produce.first_cut, "prepare",
                                 side_effect=lambda video, out, language: {"source": video.as_posix()}),
+              mock.patch.object(produce.eyes, "study", side_effect=_studied),
               mock.patch.object(produce, "analyze", return_value=mock.Mock(duration_seconds=2.0)),
               mock.patch.object(produce, "probe", return_value={"format": {"duration": "60"}}),
               mock.patch.object(produce, "prepare", wraps=produce.prepare) as prepare):
@@ -705,6 +717,7 @@ class TestTheStoryboard(_Plan):
             return {"source": copy.as_posix()}
 
         with (mock.patch.object(produce.first_cut, "prepare", side_effect=transcribed),
+              mock.patch.object(produce.eyes, "study", side_effect=_studied),
               mock.patch.object(produce, "analyze", return_value=mock.Mock(duration_seconds=20.0))):
             self.started(dict(PLAN, fps=30), footage=[picked])      # a frame rate, so the copy is never opened
         return picked, copy
@@ -728,6 +741,47 @@ class TestTheStoryboard(_Plan):
 
 def _title(text: str) -> dict:
     return {"visual": {"type": "title", "text": text}, "duration": 2.0, "reason": "r"}
+
+
+MOMENTS = {"clips": [{"clip": "red.mp4", "moments": [
+    {"start": 0, "end": 1, "what": "red", "framing": "wide", "subject": "red"}]}]}
+
+
+class TestDescribingTheClips(_Plan):
+    """The agent's eyes in the app: a thinker that can see describes each clip before the plan."""
+
+    def setUp(self):
+        super().setUp()
+        self.red = self.root / "red.mp4"
+        subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=180x320:d=1",
+                        "-pix_fmt", "yuv420p", str(self.red)], check=True)
+        self.steps: list[str] = []
+
+    def test_a_thinker_that_sees_describes_the_clips_before_the_plan(self):
+        thinker = StandInThinker([MOMENTS, PLAN], can_see=True)
+        app_think.start(self.folder, "a reel", thinker, assets=[self.red], step=self.steps.append)
+        self.assertIn("Looking at your clips with Stand-in thinker", self.steps)
+        self.assertIn("- red.mp4 0.0–1.0 s · wide · red", thinker.asked[1][1])   # the plan's request
+        self.assertTrue((self.folder / "eyes" / "red" / "moments.json").exists())
+
+    def test_moments_past_the_clip_are_sent_back(self):
+        late = {"clips": [{"clip": "red.mp4", "moments": [dict(MOMENTS["clips"][0]["moments"][0], end=9)]}]}
+        thinker = StandInThinker([late, MOMENTS, PLAN], can_see=True)
+        app_think.start(self.folder, "a reel", thinker, assets=[self.red])
+        self.assertIn("red.mp4, moment 1", thinker.asked[1][1])          # the fix round names the problem
+
+    def test_a_thinker_that_cannot_see_goes_straight_to_the_plan(self):
+        thinker = StandInThinker([PLAN], can_see=False)
+        app_think.start(self.folder, "a reel", thinker, assets=[self.red], step=self.steps.append)
+        self.assertNotIn("Looking at your clips with Stand-in thinker", self.steps)
+        self.assertIn("- red.mp4, 1.0 s", thinker.asked[0][1])
+
+    def test_try_again_neither_studies_nor_describes_again(self):                 # Review Focus 4
+        app_think.start(self.folder, "a reel", StandInThinker([MOMENTS, PLAN], can_see=True), assets=[self.red])
+        again = StandInThinker([PLAN], can_see=True)                              # only a plan is scripted
+        with mock.patch.object(produce.eyes, "frames_at", side_effect=AssertionError("studied again")):
+            app_think.start(self.folder, "a reel", again, assets=[self.red])
+        self.assertEqual(len(again.asked), 1)
 
 
 class _EditsWhileAnswering(StandInThinker):

@@ -63,6 +63,10 @@ LAST_STEP = ("\n## Answer with the plan\n\nFrameflow checks the plan, opens the 
              "itself. Skip the steps above that write a file, run a command or wait for the creator, and answer "
              "with the plan.\n")
 
+# The clips' request is the chat's too, whose steps an answer must skip.
+DESCRIBED = ("\n## Answer with the moments\n\nFrameflow keeps them with each clip itself. Open the sheets as asked, "
+             "but skip the steps above that write a file or run a command, and answer with the moments.\n")
+
 # The storyboard's request is the chat's too; and an answer carries the compositions a chat would write.
 STORYBOARD_LAST_STEP = (
     "\n## Answer with the storyboard\n\nFrameflow checks the storyboard, writes the files and builds it itself. "
@@ -197,6 +201,18 @@ def _prepared_from(folder: Path, footage, assets, music, looks, script: Path | N
     return kept if given == recorded else None
 
 
+def _describe(folder: Path, thinker: Thinker, inputs: dict, step: Callable[[str], None]) -> None:
+    """The agent's eyes: a thinker that can see looks at each clip's sheet and says what is in it, kept with
+    the clip's study so the plan and the storyboard choose real moments."""
+    step(f"Looking at your clips with {thinker.name}")
+    request = produce.shots_request(folder, inputs).read_text(encoding="utf-8") + DESCRIBED
+    answer = thinker.answer(SYSTEM, request, load_schema("moments"),
+                            lambda moments: produce.check_moments(folder, moments, inputs),
+                            material=[*_material(inputs), folder / "eyes"])
+    storyboard_edit._write(folder / "eyes" / "moments.json", answer)
+    produce.shots(folder)
+
+
 def start(folder: Path, prompt: str, thinker: Thinker, *, footage=(), assets=(), music=(), looks=(),
           script: Path | None = None, shape: str | None = None, step: Callable[[str], None] = _quiet) -> dict:
     """Prepare the material, then have the thinker write the plan's draft. With no files given, the material
@@ -212,8 +228,11 @@ def start(folder: Path, prompt: str, thinker: Thinker, *, footage=(), assets=(),
         storyboard_edit._write(folder / produce.INPUTS_FILE, dict(kept, prompt=prompt))
     else:
         produce.prepare(folder, prompt, script, footage, assets, music, looks=looks)
-    request = produce.brief_request(folder, produce._read(folder, produce.INPUTS_FILE),
-                                    can_search=thinker.can_search)
+    inputs = produce._read(folder, produce.INPUTS_FILE)
+    if thinker.can_see and any(not (folder / rel / produce.MOMENTS_FILE).is_file()
+                               for _, rel in produce._clips(inputs)):
+        _describe(folder, thinker, inputs, step)
+    request = produce.brief_request(folder, inputs, can_search=thinker.can_search)
     if shape:
         request += f"\n## The shape\n\nThe creator chose {shape}: make it the `aspect`.\n"
     request += LAST_STEP

@@ -109,6 +109,14 @@ def check_plan(plan: dict, transcript: dict) -> list[str]:
 def ensure_speech(transcript: dict) -> None:
     """Raise NoSpeechError rather than send silence to an editor."""
     validate(transcript, "transcript")
+    if "speech" in transcript:      # where someone talks, measured by the VAD: music is not speech
+        heard = sum(r["end"] - r["start"] for r in transcript["speech"])
+        if not transcript["segments"] or heard < MIN_AUDIBLE_SECONDS:
+            raise NoSpeechError(
+                f"no usable speech: {heard:.1f}s of speech in the {transcript['duration_seconds']}s recording. "
+                f"If this clip has no talking, add it as a picture or clip, not as a recording."
+            )
+        return
     audible = audible_seconds(transcript)
     if not transcript["segments"] or audible < MIN_AUDIBLE_SECONDS:
         raise NoSpeechError(

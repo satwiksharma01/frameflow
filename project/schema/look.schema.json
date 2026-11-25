@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/look.schema.json",
+  "title": "FrameflowLook",
+  "description": "The agent's look at a built video, from a sheet of its frames: whether it does what the plan says, and what to fix.",
+  "type": "object",
+  "required": ["verdict", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": { "enum": ["good", "fix"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "what", "fix"],
+        "additionalProperties": false,
+        "properties": {
+          "at": { "type": "number", "minimum": 0, "description": "Seconds into the video." },
+          "scene": { "type": "integer", "minimum": 1, "description": "Optional: the scene it belongs to." },
+          "what": { "type": "string", "minLength": 1, "description": "What is wrong, as a viewer sees it." },
+          "fix": { "type": "string", "minLength": 1, "description": "How to fix it, in words." }
+        }
+      }
+    }
+  }
+}

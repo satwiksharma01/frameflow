@@ -51,6 +51,7 @@ class ThinkError(Exception):
 class Thinker(Protocol):
     name: str
     can_search: bool
+    can_see: bool       # it can open an image file and look at it: the agent's eyes on a clip's sheet
 
     def answer(self, system: str, request: str, schema: dict,
                check: Callable[[dict], list[str]], *, search: bool = False, material: Sequence[Path] = ()) -> dict:
@@ -263,6 +264,7 @@ class AgentThinker:
     def __init__(self, agent: Agent, command: list[str] | None = None, timeout: float = AGENT_TIMEOUT):
         self.agent = agent
         self.name = agent.name
+        self.can_see = agent.id == "claude"     # Claude Code reads images; OpenCode depends on its model
         self.command = command
         self.timeout = timeout
 
@@ -375,6 +377,7 @@ class KeyThinker:
         self.label = _SERVICE_NAMES.get(service) or base_url
         self.key = key
         self.can_search = service == "anthropic"
+        self.can_see = False     # a request is text: no image reaches the model this way yet
         if not key and service != "custom":  # a local server may need none
             raise ThinkError(f"Add your {self.label} key in Settings.")
         if service == "anthropic":
@@ -416,9 +419,10 @@ class StandInThinker:
     """Scripted answers, in order, across calls. A str stands for an agent's broken output."""
     name = "Stand-in thinker"
 
-    def __init__(self, answers: list[dict | str], can_search: bool = True):
+    def __init__(self, answers: list[dict | str], can_search: bool = True, can_see: bool = False):
         self.answers = list(answers)
         self.can_search = can_search
+        self.can_see = can_see
         self.asked: list[tuple[str, str]] = []
         self.material: list[list[Path]] = []
 

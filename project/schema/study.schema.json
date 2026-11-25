@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/study.schema.json",
+  "title": "FrameflowClipStudy",
+  "description": "What Frameflow measured of one clip for the agent's eyes: where it cuts, a sheet of its frames, how good each sampled frame looks, and where someone speaks.",
+  "type": "object",
+  "required": ["source", "stamp", "duration", "width", "height", "fps", "cuts", "step", "samples", "speech", "speech_seconds", "sheet"],
+  "additionalProperties": false,
+  "properties": {
+    "source": { "type": "string", "minLength": 1 },
+    "stamp": {
+      "description": "The clip as it was studied, to tell it again unchanged.",
+      "type": "object",
+      "required": ["path", "bytes", "mtime_ns"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "mtime_ns": { "type": "integer" }
+      }
+    },
+    "duration": { "type": "number", "exclusiveMinimum": 0 },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 },
+    "fps": { "type": "number", "minimum": 0 },
+    "cuts": { "type": "array", "items": { "type": "number", "minimum": 0 } },
+    "step": { "type": "number", "exclusiveMinimum": 0 },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["t", "sharp", "bright", "motion"],
+        "additionalProperties": false,
+        "properties": {
+          "t": { "type": "number", "minimum": 0 },
+          "sharp": { "type": "number", "minimum": 0 },
+          "bright": { "type": "number", "minimum": 0 },
+          "motion": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "speech": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end"],
+        "additionalProperties": false,
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "speech_seconds": { "type": "number", "minimum": 0 },
+    "sheet": { "type": "string", "minLength": 1 }
+  }
+}

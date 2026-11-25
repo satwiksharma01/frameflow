@@ -38,7 +38,7 @@ import json
 import sys
 from pathlib import Path
 
-from project import look, screen
+from project import look, screen, vad
 from project.captions import add as add_captions, runs_from_cut
 from project.editor_agent import (
     NoSpeechError,
@@ -86,6 +86,15 @@ def _step(message: str) -> None:
     print(f"==> {message}", flush=True)
 
 
+def drop_outside_speech(transcript: dict) -> int:
+    """Drop the segments no speech region touches: whisper's words over music or silence. How many went."""
+    kept = [s for s in transcript["segments"]
+            if any(s["start"] < r["end"] and r["start"] < s["end"] for r in transcript["speech"])]
+    dropped = len(transcript["segments"]) - len(kept)
+    transcript["segments"] = kept
+    return dropped
+
+
 def prepare(video: Path, out_dir: Path, language: str) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,6 +118,10 @@ def prepare(video: Path, out_dir: Path, language: str) -> dict:
 
     _step("Transcribing and measuring silences")
     transcript = transcribe(source, language=language)
+    if vad.installed():
+        transcript["speech"] = vad.speech(source)
+        if dropped := drop_outside_speech(transcript):
+            print(f"    {dropped} segment(s) over no speech dropped")
     _write_json(out_dir / TRANSCRIPT_FILE, transcript)
     print(f"    {len(transcript['segments'])} segments, {len(transcript['silences'])} silences")
     ensure_speech(transcript)

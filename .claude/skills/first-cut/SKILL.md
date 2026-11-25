@@ -13,7 +13,7 @@ Frameflow handles the mechanical work (frame-rate normalization, transcription, 
    python -m project.first_cut "<video>" --prepare [--brief "<what the user wants>"]
    ```
 
-   If it stops with "no usable speech", tell the user the measured numbers from the message and stop — there is nothing to edit, and the likely cause is the recording's microphone input.
+   If it stops with "no usable speech", tell the user the measured numbers from the message and stop — there is nothing to edit. With the speech model installed the count is of actual talking, not sound, so a clip of music or ambience is refused too, and the message says so; otherwise the likely cause is the recording's microphone input.
 
 2. **Edit.** Read `output/<video name>/edit_request.md` in full and follow it. It contains the editing guidance, the transcript, the measured silences, and the plan schema. Decide keep or remove for every span and write the plan to `output/<video name>/edit_plan.json`. Place cut points inside measured silences; the transcript's segment boundaries include surrounding pauses and are not cut points.
 
