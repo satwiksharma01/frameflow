@@ -219,6 +219,8 @@ def build_osp(ir: dict, project_dir: Path) -> dict:
                 "reader": reader,
                 **_levels(clip, in_f, length_f, fps),
                 **_framing(clip, reader, project["width"], project["height"], fps),
+                # OpenShot draws a sound file's cover art as video unless the clip's own video is off.
+                **({"has_video": keyframe(0.0)} if track["type"] == "audio" else {}),
                 "effects": _effects(clip, clip_id, project_dir),
             })
             end = max(end, (start_f + length_f) / fps)
