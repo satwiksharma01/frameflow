@@ -22,6 +22,18 @@
         }
       }
     },
+    "speech": {
+      "description": "Optional: where someone is speaking, measured by a voice-activity model (Silero VAD). Music and noise are not speech; when present, the speech check counts these, not the time above the silence threshold.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end"],
+        "properties": {
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
     "segments": {
       "type": "array",
       "items": {

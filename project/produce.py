@@ -29,14 +29,16 @@ import argparse
 import functools
 import hashlib
 import json
+import math
 import re
 import sys
 from pathlib import Path
 
-from project import (beats, broll, captions, first_cut, generate, hyperframes, look, openshot_build, preview, reference,
-                     reframe, research, voiceover)
+from project import (beats, broll, captions, direction, eyes, first_cut, generate, hyperframes, look, openshot_build,
+                     preview, projects, reference, reframe, research, vad, voiceover)
 from project.cutpoints import frame_align, kept_pieces, place_in_pause, trim_edges
 from project.editors import DEFAULT, EDITORS
+from project.eyes import stamp
 from project.media import IMAGE_SUFFIXES, MediaError, analyze, level_db, loudness, probe, still_to_clip
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
@@ -48,8 +50,10 @@ BRIEF_FILE = "brief.json"
 BRIEF_REQUEST = "brief_request.md"
 STORYBOARD_FILE = "storyboard.json"
 STORYBOARD_REQUEST = "storyboard_request.md"
+MOMENTS_FILE = "moments.json"   # a clip's moments, kept with its study in eyes/<clip>/
 IR_FILE = "project.ir.json"
 REPORT_FILE = "build_report.json"       # what the last build found, for an app to read
+LOOK_DIR = "look"       # the look step: a sheet of the built video, its request and the agent's look.json
 
 SIZES = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}
 # Under narration, a visual's own sound is turned down this far: inaudible, but
@@ -105,18 +109,16 @@ def asset_entry(path: Path) -> dict:
     if path.suffix.lower() in IMAGE_SUFFIXES:
         return {"path": path.as_posix(), "kind": "image"}
     info = analyze(path)
+    width, height = (info.height, info.width) if abs(info.rotation) % 180 == 90 else (info.width, info.height)
     return {"path": path.as_posix(), "kind": "clip", "duration": info.duration_seconds,
-            "size": f"{info.width}x{info.height}"}
-
-
-def stamp(path: Path) -> dict:
-    """A recording as it was given: where, its size and when it last changed, to tell it again unchanged."""
-    path, stat = path.resolve(), path.stat()
-    return {"path": path.as_posix(), "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+            "size": f"{width}x{height}"}     # as it plays: a phone clip stored on its side is upright
 
 
 def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
-            assets: list[Path], music: list[Path], language: str = "auto", looks: list[Path] = ()) -> Path:
+            assets: list[Path], music: list[Path], language: str = "auto", looks: list[Path] = (),
+            project: str | None = None) -> Path:
+    if project is not None:
+        projects.load(project)      # an unknown project is refused before anything is made
     for path in looks:      # before the footage, whose transcription takes minutes
         text = path.read_text(encoding="utf-8", errors="replace") if path.suffix.lower() == ".cube" else ""
         # OpenShot's Color Map reads both kinds of .cube (checked through its engine).
@@ -126,10 +128,14 @@ def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
     inputs = {"prompt": prompt, "script": script.read_text(encoding="utf-8") if script else None,
               "footage": [], "assets": [], "music": [],
               "looks": [{"path": path.resolve().as_posix()} for path in looks]}
+    if project is not None:
+        inputs["project"] = project
+    measured: dict[Path, list[dict] | None] = {}       # each recording's speech, measured once with its transcript
     for video in footage:
         # Each recording is transcribed exactly as for a first cut, into its own folder.
         out, given = folder / "footage" / video.stem, stamp(video)     # as it was before it was transcribed
         transcript = first_cut.prepare(video.resolve(), out, language)
+        measured[video] = transcript.get("speech")
         inputs["footage"].append({"name": video.name, "source": transcript["source"],
                                   "duration": analyze(transcript["source"]).duration_seconds,
                                   "folder": out.relative_to(folder).as_posix(), "stamp": given})
@@ -138,18 +144,135 @@ def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
     for path in music:
         inputs["music"].append({"path": path.resolve().as_posix(),
                                 "duration": float(probe(path)["format"]["duration"])})
+    # The agent's eyes: each video clip studied once, recording or not, for the agent to look at.
+    clips = [(video, f) for video, f in zip(footage, inputs["footage"])] + \
+            [(Path(a["path"]), a) for a in inputs["assets"] if a["kind"] == "clip"]
+    taken: set[str] = set()
+    for video, entry in clips:
+        name, n = f"eyes/{video.stem}", 1
+        while name in taken:
+            n += 1
+            name = f"eyes/{video.stem}-{n}"
+        taken.add(name)
+        first_cut._step(f"Looking at {video.name}")
+        studied = folder / name / eyes.STUDY
+        if studied.is_file() and json.loads(studied.read_text(encoding="utf-8")).get("stamp") != stamp(video):
+            (folder / name / MOMENTS_FILE).unlink(missing_ok=True)      # the moments of the clip as it was
+        eyes.study(video, folder / name, speech=measured.get(video))
+        entry["eyes"] = name
     first_cut._write_json(folder / INPUTS_FILE, inputs)
+    if clips:
+        return shots_request(folder, inputs)
     (folder / BRIEF_REQUEST).write_text(brief_request(folder, inputs), encoding="utf-8")
     return folder / BRIEF_REQUEST
 
 
-def _inventory(inputs: dict) -> str:
+def _clips(inputs: dict) -> list[tuple[str, str]]:
+    """(file name, eyes folder) of each studied clip."""
+    return ([(f["name"], f["eyes"]) for f in inputs["footage"] if "eyes" in f]
+            + [(Path(a["path"]).name, a["eyes"]) for a in inputs["assets"] if "eyes" in a])
+
+
+def _shot_lines(folder: Path, name: str, eyes_folder: str) -> list[str]:
+    study = json.loads((folder / eyes_folder / eyes.STUDY).read_text(encoding="utf-8"))
+    kept = folder / eyes_folder / MOMENTS_FILE
+    moments = json.loads(kept.read_text(encoding="utf-8"))["moments"] if kept.is_file() else None
+    return eyes.shot_lines(name, study, moments)
+
+
+def shots_request(folder: Path, inputs: dict) -> Path:
+    """The request for the clips' moments: what the agent sees in each clip's sheet."""
+    todo, done = [], []
+    for name, eyes_folder in _clips(inputs):
+        if (folder / eyes_folder / MOMENTS_FILE).is_file():
+            done.append(name)
+            continue
+        study = json.loads((folder / eyes_folder / eyes.STUDY).read_text(encoding="utf-8"))
+        cut_at = ", ".join(f"{c:.1f}" for c in study["cuts"][:12])
+        cuts = f"cuts at {cut_at} s" if cut_at else "no cuts"
+        todo.append(f"- `{name}` ({study['source']}): {study['duration']:.1f} s; {cuts}; "
+                    f"speech {study['speech_seconds']:.1f} s; "
+                    f"{', '.join(eyes.flags(study['samples'], 0, study['duration'])) or 'sharp'}. "
+                    f"Its sheet: `{(folder / eyes_folder / study['sheet']).as_posix()}` "
+                    f"(a frame every {study['step']:g} s, each with its time)")
+    path = folder / "eyes" / "shots_request.md"
+    answer = (folder / "eyes" / "moments.json").as_posix()
+    path.write_text(f"""# What is in the clips
+
+Frameflow studied each of the creator's clips: where it cuts, a sheet of its frames with each frame's time on it, how
+sharp and bright each frame is, and where someone speaks. Look at each sheet and write what you see as the clip's
+moments. The brief and the storyboard then choose real moments by their times.
+
+## The clips
+
+{chr(10).join(todo) or "- (none left to describe)"}
+{("Already described: " + ", ".join(f"`{n}`" for n in done) + ".") if done else ""}
+
+## How
+
+- Open each sheet. Split its clip into moments at its cuts and wherever what is seen changes: a turn, a gesture,
+  something held up to the camera, a new angle. Moments go in order, without overlapping, inside the clip.
+- Where a sheet is too coarse to see when something happens, take a closer look, four frames a second:
+  `python -m project.eyes sheet "<the clip's path>" --from S --to E --out "{(folder / "eyes").as_posix()}/closer-S-E.jpg"`
+- Each moment has `start` and `end` (seconds into the clip), `what` (what is seen, in a sentence), `framing`
+  (`close`, `medium` or `wide`), `subject` (who or what is in focus) and, if it helps, `notes` (what happens).
+- Write `{answer}` matching the schema below, with one entry per clip you described, named by its file name. Then run:
+
+  ```
+  python -m project.produce "{folder.as_posix()}" --shots
+  ```
+
+## Schema
+
+```json
+{_schema("moments")}
+```
+""", encoding="utf-8")
+    return path
+
+
+def check_moments(folder: Path, answer: dict, inputs: dict) -> list[str]:
+    """What is wrong with the agent's moments: a clip the video does not have, or moments outside a clip."""
+    by_name, problems = dict(_clips(inputs)), []
+    for c in answer["clips"]:
+        if c["clip"] not in by_name:
+            problems.append(f"{c['clip']} is not one of this video's clips: {', '.join(by_name) or 'none'}")
+            continue
+        study = json.loads((folder / by_name[c["clip"]] / eyes.STUDY).read_text(encoding="utf-8"))
+        problems += eyes.moment_problems(c["clip"], c["moments"], study["duration"])
+    return problems
+
+
+def shots(folder: Path) -> Path:
+    """Check the agent's moments, keep each clip's with its study, and write the brief's request."""
+    inputs = _read(folder, INPUTS_FILE)
+    by_name = dict(_clips(inputs))
+    if (folder / "eyes" / "moments.json").is_file():
+        answer = _read(folder, "eyes/moments.json", "moments")
+        problems = check_moments(folder, answer, inputs)
+        if problems:
+            raise ProduceError(f"{folder / 'eyes' / 'moments.json'} needs fixing:\n"
+                               + "\n".join(f"  {p}" for p in problems))
+        for c in answer["clips"]:
+            first_cut._write_json(folder / by_name[c["clip"]] / MOMENTS_FILE, {"moments": c["moments"]})
+    (folder / BRIEF_REQUEST).write_text(brief_request(folder, inputs), encoding="utf-8")
+    return folder / BRIEF_REQUEST
+
+
+def _inventory(inputs: dict, folder: Path | None = None) -> str:
+    """What the creator provided, with each studied clip's shot list under it when the folder is given."""
+    def shot_list(entry: dict, name: str) -> list[str]:
+        return ([f"  {line}" for line in _shot_lines(folder, name, entry["eyes"])]
+                if folder is not None and "eyes" in entry else [])
+
     lines = []
     for f in inputs["footage"]:
         lines.append(f"- recording `{f['name']}`, {f['duration']:.1f}s (transcript in `{f['folder']}/`)")
+        lines += shot_list(f, f["name"])
     for a in inputs["assets"]:
         detail = "image" if a["kind"] == "image" else f"clip, {a['duration']:.1f}s, {a['size']}"
         lines.append(f"- asset `{a['path']}` ({detail})")
+        lines += shot_list(a, Path(a["path"]).name)
     for m in inputs["music"]:
         lines.append(f"- music `{m['path']}`, {m['duration']:.1f}s")
     for look in inputs.get("looks", []):
@@ -175,11 +298,12 @@ Work out what the creator wants and write it to `{(folder / BRIEF_FILE).as_posix
 
 ## What they provided
 
-{_inventory(inputs)}
+{_inventory(inputs, folder)}
 {script}
 ## How
 
 - Pick the aspect from where it will be posted: 9:16 for Reels, Shorts and TikTok; 16:9 for YouTube and pitches; 1:1 for square feeds.
+- Set `mode` to what success is for the viewer: one of stop, show, persuade, teach, tell, as `creative/modes.md` describes them.
 - If something essential is missing - who it is for, the product's name, the call to action - put it in `open_questions` rather than guessing.
 - If the creator has a skill library, name the skills this video should use in `skills`, with why.
 - For a pitch, or whenever the video will state facts about the world - numbers, dates, prices, who did what - research them with your web tools and put each in `facts`: the claim as the video will use it, who says it (`source`, as the narration would name them), the page (`url`), and the words on that page that support it (`quote`), at least four, copied exactly as the page has them rather than from a summary of it. Prefer the original - the report, the company's own page - over an article about it. State nothing from memory: a fact you cannot find stays out, or goes in `open_questions` as an entry that begins `Needed fact: `. What the creator told you about their own product needs no source.
@@ -253,10 +377,26 @@ def use_concept(folder: Path, concept: str, sample: float | None = None) -> Path
     return folder / STORYBOARD_FILE
 
 
+def _project_kit(inputs: dict) -> Path | None:
+    """The brand kit of the video's project, when it has one; a project that is gone is named, not a traceback."""
+    if inputs.get("project") is None:
+        return None
+    try:
+        projects.load(inputs["project"])
+    except projects.ProjectError as e:
+        raise ProduceError(str(e)) from None
+    return projects.brand_file(inputs["project"])
+
+
 def storyboard_request(folder: Path, brief: dict | None = None) -> Path:
     """The storyboard's request, from brief.json once confirmed, or from a plan draft its caller has checked."""
     inputs = _read(folder, INPUTS_FILE)
     brief = _confirmed_brief(folder) if brief is None else brief
+    with hyperframes.kit_file(_project_kit(inputs)):
+        return _storyboard_request(folder, brief, inputs)
+
+
+def _storyboard_request(folder: Path, brief: dict, inputs: dict) -> Path:
     parts = [f"""# Storyboard
 
 Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, matching the schema below.
@@ -269,7 +409,7 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
 
 ## What the creator provided
 
-{_inventory(inputs)}
+{_inventory(inputs, folder)}
 """]
     if inputs["script"]:
         parts.append(f"## The creator's script\n\nUse it as written unless the brief says otherwise.\n\n{inputs['script']}\n")
@@ -322,6 +462,9 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
                    "average: a scene is a whole point, one stretch of a recording that may hold several sentences, "
                    "not a single cut. Start and end it in pauses as usual; the build cuts the pauses inside it.\n"
                    if each else "")
+    contract = direction.storyboard_section(folder)     # the chosen direction; nothing without one
+    if contract:
+        parts.append(contract)
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
@@ -730,6 +873,12 @@ def preview_path(folder: Path, brief: dict) -> Path:
 
 
 def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
+    """Build the confirmed storyboard into the editor's project, in the video's project's brand kit when it has one."""
+    with hyperframes.kit_file(_project_kit(_read(folder, INPUTS_FILE))):
+        return _build(folder, open_it, budget)
+
+
+def _build(folder: Path, open_it: bool, budget: float) -> Path:
     built_from = source_digest(folder)      # before anything is read: a change during the build is a change after it
     inputs = _read(folder, INPUTS_FILE)
     brief = _read(folder, BRIEF_FILE, "brief")
@@ -754,6 +903,7 @@ def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
     ir_path = folder / IR_FILE
     (folder / REPORT_FILE).unlink(missing_ok=True)      # the last report is of the project about to be replaced
     preview_path(folder, brief).unlink(missing_ok=True)     # and so is the last preview
+    (folder / LOOK_DIR / "look.json").unlink(missing_ok=True)   # and the agent's look at it
     first_cut._write_json(ir_path, ir)
     project = editor.compile_file(ir_path, project_path(folder, brief))
     total = max((c["timeline_start"] + c["timeline_duration"] for t in ir["tracks"] for c in t["clips"]), default=0)
@@ -806,11 +956,126 @@ def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
     return project
 
 
+# --- look at the result ----------------------------------------------------------------
+
+def look_times(duration: float, scene_starts: list[float]) -> list[float]:
+    """When to take a frame of the built video: steadily through it, the first two seconds closely (the hook),
+    and every scene's first frame. A frame within a quarter second of one already taken would show the same."""
+    step = max(0.5, duration / 40)
+    kept = [round(s + 0.05, 3) for s in scene_starts if s + 0.05 < duration]
+    for t in [t for t in (0.0, 0.5, 1.0, 1.5, 2.0) if t < duration] + [i * step for i in range(math.ceil(duration / step - 1e-9))]:
+        if all(abs(t - k) >= 0.25 for k in kept):
+            kept.append(round(t, 3))
+    return sorted(kept)
+
+
+def _scene_at(scenes: list[dict], t: float) -> int:
+    return next((n for n, s in enumerate(scenes, start=1) if s["start"] <= t < s["end"]), len(scenes))
+
+
+def _scene_line(scene: dict) -> str:
+    visual = scene["visual"]
+    shown = {"footage": lambda v: f"recording {Path(v['source']).name} {v['start']:.1f}-{v['end']:.1f} s",
+             "asset": lambda v: f"{Path(v['path']).name}" + (f" from {v['start']:.1f} s" if "start" in v else ""),
+             "title": lambda v: f"title \"{v['text']}\"",
+             "composition": lambda v: f"composition {Path(v['path']).name}",
+             "generated": lambda v: f"a generated {v['kind']}: {v['prompt']}"}[visual["type"]](visual)
+    extra = [f"caption \"{scene['caption']}\"" if scene.get("caption") else "",
+             f"narration \"{scene['narration']}\"" if scene.get("narration") else ""]
+    return "; ".join([shown, *[e for e in extra if e]])
+
+
+def look_at(folder: Path) -> tuple[str, Path | None]:
+    """The look step. Without the agent's look.json: a sheet of the built preview and the request to judge it.
+    With it: the agent's verdict and findings, checked."""
+    if not (folder / REPORT_FILE).is_file():
+        raise ProduceError("build the video first: --look-at looks at its preview")
+    report = json.loads((folder / REPORT_FILE).read_text(encoding="utf-8"))
+    preview_file = folder / report["preview"] if isinstance(report.get("preview"), str) else None
+    if preview_file is None or not preview_file.is_file():
+        raise ProduceError("build the video first: --look-at looks at its preview, and the last build made none")
+    scenes, seconds = report["scenes"], report["seconds"]
+    answer = folder / LOOK_DIR / "look.json"
+    if answer.is_file():
+        doc = _read(folder, f"{LOOK_DIR}/look.json", "look")
+        problems = [f"finding {n}: at {f['at']} s is outside the video, which is {seconds:.2f} s long"
+                    for n, f in enumerate(doc["findings"], start=1) if f["at"] > seconds + 0.05]
+        problems += [f"finding {n}: there is no scene {f['scene']}; the video has {len(scenes)}"
+                     for n, f in enumerate(doc["findings"], start=1) if f.get("scene", 1) > len(scenes)]
+        if problems:
+            raise ProduceError(f"{answer} needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
+        return ("\n".join([f"Verdict: {doc['verdict']}"] + [
+            f"  {f['at']:.1f}s" + (f" (scene {f['scene']})" if "scene" in f else "") + f": {f['what']}. Fix: {f['fix']}"
+            for f in doc["findings"]]), None)
+    times = look_times(seconds, [s["start"] for s in scenes])
+    sheet = eyes.draw_sheet(eyes.frames_at(preview_file, times),
+                            [f"{t:.1f}s, scene {_scene_at(scenes, t)}" for t in times], folder / LOOK_DIR / "sheet.jpg")
+    board = _read(folder, STORYBOARD_FILE, "storyboard")
+    lines = [f"- scene {n}, {s['start']:.2f}-{s['end']:.2f} s: {_scene_line(scene)}"
+             for n, (s, scene) in enumerate(zip(scenes, board["scenes"]), start=1)]
+    direction = folder / "direction.json"
+    contract = (f"\n## The direction\n\n```json\n{direction.read_text(encoding='utf-8').strip()}\n```\n"
+                if direction.is_file() else "")
+    picture = report.get("picture") or {}
+    found = [f"- {p['at']:.1f} s: {p['what']}" if p.get("at") is not None else f"- {p['what']}"
+             for p in picture.get("problems", [])]       # as _picture_problem keeps them
+    joins = [f"- a join at {j['at']:.1f} s may clip a word" for j in (report.get("joins") or {}).get("suspect", [])]
+    path = folder / LOOK_DIR / "request.md"
+    path.write_text(f"""# Look at the video
+
+The video is built. Look at it the way a viewer would, on the sheet of its frames, and say whether it does what the
+plan and the storyboard say. Each frame on the sheet has its time and its scene.
+
+Open the sheet: `{sheet.as_posix()}`
+
+## The brief
+
+```json
+{json.dumps(_read(folder, BRIEF_FILE, "brief"), indent=2, ensure_ascii=False)}
+```
+
+## The scenes, as built
+
+{chr(10).join(lines)}
+{contract}
+## What Frameflow's own checks found
+
+{chr(10).join(found + joins) or "- nothing"}
+
+## Judge
+
+1. Each scene shows what the storyboard says it shows.
+2. The first two seconds deliver the hook.
+3. Text is readable, inside the frame and the platform's safe area, and off faces. In a vertical frame keep it clear
+   of the top 14% and the bottom 35%, and of 6% at each side (Meta's guide for Reels; Shorts and TikTok keep more
+   clear on the right).
+4. Nothing is on screen that should not be: a stray picture, black, a wrong crop.
+5. The rhythm of the cuts suits the video.
+6. When there is a direction above, the video keeps to it.
+
+Write `{(folder / LOOK_DIR / "look.json").as_posix()}` matching the schema below: `verdict` is `good` or `fix`, and each
+finding says when (`at`, seconds; `scene` if it belongs to one), what is wrong and how to fix it, in words. Then run:
+
+```
+python -m project.produce "{folder.as_posix()}" --look-at
+```
+
+## Schema
+
+```json
+{_schema("look")}
+```
+""", encoding="utf-8")
+    return f"Next: read {path}", path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Make a video from a prompt, as an editable project.")
     parser.add_argument("folder", help="where this video's files go, e.g. output/jacket-reel")
     stage = parser.add_mutually_exclusive_group(required=True)
     stage.add_argument("--prepare", metavar="PROMPT", help="start: the creator's prompt, in their words")
+    stage.add_argument("--shots", action="store_true",
+                       help="after prepare: check the agent's moments of each clip (eyes/moments.json)")
     stage.add_argument("--brief", action="store_true", help="check brief.json, every fact against its source")
     stage.add_argument("--storyboard", action="store_true", help="after the brief is confirmed")
     stage.add_argument("--reference", type=Path, metavar="VIDEO",
@@ -818,11 +1083,22 @@ def main() -> None:
     stage.add_argument("--concepts", action="store_true", help="check the agent's analysis and concepts, and list them")
     stage.add_argument("--concept", metavar="ID", help="make the chosen concept the storyboard")
     stage.add_argument("--build", action="store_true", help="after the storyboard is confirmed")
+    stage.add_argument("--look-at", action="store_true",
+                       help="after a build: a sheet of the video for the agent to judge, then its look.json checked")
+    stage.add_argument("--direction", action="store_true",
+                       help="after the brief is confirmed: the direction round, the next step each time it is run")
+    stage.add_argument("--choose", metavar="CARD", help="the creator's choice from the direction's hand")
+    stage.add_argument("--reroll", choices=direction.REGISTERS,
+                       help="another direction round: plain, safer or bolder")
+    stage.add_argument("--pin", metavar="WORDS", help="the creator's own direction, in their words")
+    parser.add_argument("--project", metavar="SLUG", help="with --prepare: make the video in projects/<slug>")
     parser.add_argument("--script", type=Path, help="a script the creator wrote")
-    parser.add_argument("--footage", type=Path, nargs="*", default=[], help="the creator's recordings")
-    parser.add_argument("--asset", type=Path, nargs="*", default=[], help="images or clips to use")
-    parser.add_argument("--music", type=Path, nargs="*", default=[], help="music files to choose from")
-    parser.add_argument("--look", type=Path, nargs="*", default=[], help="LUTs (.cube) to choose the look from")
+    # Each may be repeated or take several files; repeated, the files add up.
+    parser.add_argument("--footage", type=Path, nargs="+", action="extend", default=[], help="the creator's recordings")
+    parser.add_argument("--asset", type=Path, nargs="+", action="extend", default=[], help="images or clips to use")
+    parser.add_argument("--music", type=Path, nargs="+", action="extend", default=[], help="music files to choose from")
+    parser.add_argument("--look", type=Path, nargs="+", action="extend", default=[],
+                        help="LUTs (.cube) to choose the look from")
     parser.add_argument("--language", default="auto", help="spoken language of the footage, or 'auto'")
     parser.add_argument("--open", action="store_true", help="open the project in OpenShot when built")
     parser.add_argument("--budget", type=float, default=0.0, metavar="DOLLARS",
@@ -832,6 +1108,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.sample and not args.concept:
         parser.error("--sample goes with --concept")
+    for stream in (sys.stdout, sys.stderr):     # a hand or a world can hold any script; Windows' code page cannot
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     folder = Path(args.folder)
     try:
         if args.prepare:
@@ -839,7 +1118,9 @@ def main() -> None:
                        if p and not p.exists()]
             if missing:
                 raise ProduceError("not found: " + ", ".join(map(str, missing)))
-            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look)}")
+            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look, args.project)}")
+        elif args.shots:
+            print(f"\nNext: read {shots(folder)}")
         elif args.brief:
             first_cut._step("Checking the brief, and each fact on its page")
             for line in check_brief(folder):
@@ -861,10 +1142,28 @@ def main() -> None:
             path = use_concept(folder, args.concept, args.sample)
             print(f"\nStoryboard: {path} ({f'the opening {args.sample:g}s of ' if args.sample else ''}{args.concept})")
             print("Next: show the creator the storyboard, and wait for them to confirm it before --build.")
+        elif args.look_at:
+            print(f"\n{look_at(folder)[0]}")
+        elif args.direction or args.choose is not None or args.reroll is not None or args.pin is not None:
+            brief, inputs = _confirmed_brief(folder), _read(folder, INPUTS_FILE)
+            if args.direction:
+                message, path = direction.advance(folder, brief, inputs)
+            elif args.choose is not None:
+                path = direction.choose(folder, args.choose)
+                message, path = (f"Direction: {json.loads(path.read_text(encoding='utf-8'))['name']}, in {path}\n"
+                                 "Next: run --storyboard."), None
+            elif args.reroll is not None:
+                message, path = f"Re-rolled, {args.reroll}.", direction.reroll(folder, args.reroll, brief, inputs)
+            else:
+                message, path = "Pinned in the creator's words.", direction.pin(folder, args.pin, brief)
+            print(f"\n{message}")
+            if path is not None:
+                print(f"Next: read {path}")
         else:
             print(f"\nBuilt: {build(folder, args.open, args.budget)}")
     except (ProduceError, MediaError, TranscriptionError, first_cut.NoSpeechError, voiceover.VoiceError,
-            hyperframes.HyperFramesError, ProfileError, generate.GenerateError, reference.AgentVideoError) as e:
+            hyperframes.HyperFramesError, ProfileError, generate.GenerateError, reference.AgentVideoError,
+            eyes.EyesError, projects.ProjectError, direction.DirectionError, vad.VadError) as e:
         sys.exit(f"\n{e}")
 
 

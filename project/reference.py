@@ -75,7 +75,9 @@ def prepare(folder: Path, video: Path, inputs: dict, brief: dict) -> Path:
         timing = json.loads((folder / f["folder"] / TIMING_FILE).read_text(encoding="utf-8"))
         timings[f["name"]] = {"pauses": [{"start": p["start"], "end": p["end"]} for p in timing["pauses"]],
                               "words": []}
-    _write(work / "inputs.json", {k: inputs[k] for k in _INPUTS})
+    # Agent Video refuses fields it does not know, such as where Frameflow keeps a clip's study.
+    _write(work / "inputs.json", {k: [{f: v for f, v in e.items() if f != "eyes"} for e in inputs[k]]
+                                  if k in ("footage", "assets") else inputs[k] for k in _INPUTS})
     _write(work / "brief.json", {k: brief[k] for k in _BRIEF if k in brief})
     _write(work / "source-timings.json", timings)
     reply = _run("reference-prepare", str(video), "--inputs", str(work / "inputs.json"),

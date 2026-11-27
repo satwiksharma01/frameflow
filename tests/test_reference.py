@@ -89,6 +89,14 @@ class TestTheReferenceFlow(unittest.TestCase):
         timings = json.loads((self.folder / reference.FOLDER / "source-timings.json").read_text(encoding="utf-8"))
         self.assertEqual(timings, {"talk.mp4": {"pauses": [{"start": 1.0, "end": 1.6}], "words": []}})
 
+    def test_a_clips_eyes_folder_does_not_reach_agent_video(self):
+        inputs = json.loads((self.folder / produce.INPUTS_FILE).read_text(encoding="utf-8"))
+        inputs["footage"][0]["eyes"] = "eyes/talk"          # as prepare records a studied clip
+        (self.folder / produce.INPUTS_FILE).write_text(json.dumps(inputs), encoding="utf-8")
+        produce.reference_session(self.folder, self.reference)
+        sent = json.loads((self.folder / reference.FOLDER / "inputs.json").read_text(encoding="utf-8"))
+        self.assertNotIn("eyes", sent["footage"][0])
+
     def test_a_second_session_is_refused_rather_than_written_over(self):
         produce.reference_session(self.folder, self.reference)
         with self.assertRaises(reference.AgentVideoError) as cm:

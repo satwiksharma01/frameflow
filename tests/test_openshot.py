@@ -501,6 +501,22 @@ class TestAudioTrack(unittest.TestCase):
         osp = json.loads((self.root / "p.osp").read_text(encoding="utf-8"))
         self.assertEqual({f["media_type"] for f in osp["files"]}, {"video", "audio"})
 
+    def test_a_sound_files_picture_is_not_drawn(self):
+        """An MP3's cover art is a video stream to OpenShot, drawn over the video unless the clip's
+        own video is off; the picture's clip stays automatic."""
+        from project.compile_osp import build_osp
+        from project.openshot_template import keyframe
+        video, voice = build_osp(self.project(), self.root)["clips"]
+        self.assertEqual(voice["has_video"], keyframe(0.0))
+        self.assertEqual(video["has_video"], keyframe(-1.0))
+
+    def test_a_sound_files_picture_turned_off_is_not_a_change_by_hand(self):
+        from project.compile_osp import compile_file
+        from project.parse_osp import unsupported_content
+        ir_path = self.root / "p.ir.json"
+        ir_path.write_text(json.dumps(self.project()), encoding="utf-8")
+        self.assertEqual(unsupported_content(compile_file(ir_path, self.root / "p.osp")), [])
+
     def test_openshots_engine_plays_the_voice(self):
         from project import openshot_build
         from project.compile_osp import compile_file

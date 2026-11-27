@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/moments.schema.json",
+  "title": "FrameflowMoments",
+  "description": "What the agent saw in each clip, from its sheet: the clip's moments in order, each with when it starts and ends, what is seen and how it is framed.",
+  "type": "object",
+  "required": ["clips"],
+  "additionalProperties": false,
+  "properties": {
+    "clips": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["clip", "moments"],
+        "additionalProperties": false,
+        "properties": {
+          "clip": { "type": "string", "minLength": 1, "description": "The clip's file name, as the request lists it." },
+          "moments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["start", "end", "what", "framing", "subject"],
+              "additionalProperties": false,
+              "properties": {
+                "start": { "type": "number", "minimum": 0, "description": "Seconds into the clip." },
+                "end": { "type": "number", "exclusiveMinimum": 0 },
+                "what": { "type": "string", "minLength": 1, "description": "What is seen, in a sentence." },
+                "framing": { "enum": ["close", "medium", "wide"] },
+                "subject": { "type": "string", "minLength": 1, "description": "Who or what is in focus." },
+                "notes": { "type": "string", "minLength": 1, "description": "Optional: what happens, such as 'turns to camera'." }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

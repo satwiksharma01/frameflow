@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/candidates.schema.json",
+  "title": "FrameflowCandidates",
+  "description": "The agent's framing of a video and, when no catalog leads the round, seven candidate directions dug from the audience's culture.",
+  "type": "object",
+  "required": ["framing", "candidates"],
+  "additionalProperties": false,
+  "properties": {
+    "framing": {
+      "type": "object",
+      "required": ["mechanism", "viewer_scene", "cultural_home", "must_prove", "rut"],
+      "additionalProperties": false,
+      "properties": {
+        "mechanism": { "type": "string", "minLength": 1, "description": "How the video works, in a sentence." },
+        "viewer_scene": { "type": "string", "minLength": 1, "description": "Where and how the viewer really meets it." },
+        "cultural_home": { "type": "string", "minLength": 1, "description": "The audience's cultural home." },
+        "must_prove": { "type": "string", "minLength": 1, "description": "What the first two seconds must prove." },
+        "rut": {
+          "type": "object",
+          "required": ["default", "opposite"],
+          "additionalProperties": false,
+          "properties": {
+            "default": { "type": "string", "minLength": 1, "description": "What this kind of video always looks like." },
+            "opposite": { "type": "string", "minLength": 1, "description": "Its predictable opposite." }
+          }
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "family", "why", "how", "literal"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "name": { "type": "string", "minLength": 1 },
+          "family": { "enum": ["print", "screen", "music", "broadcast", "interface", "ritual"] },
+          "why": { "type": "string", "minLength": 1, "description": "Why it resonates with the audience and can carry this video." },
+          "how": { "type": "string", "minLength": 1, "description": "How it looks, moves and sounds." },
+          "literal": { "type": "boolean", "description": "True when it takes the brief's own picture literally." }
+        }
+      }
+    }
+  }
+}

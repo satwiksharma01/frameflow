@@ -27,6 +27,14 @@ SCHEMA_FILES = {
     "shorts_plan": "shorts_plan.schema.json",
     "brand": "brand.schema.json",
     "publish": "publish.schema.json",
+    "study": "study.schema.json",
+    "moments": "moments.schema.json",
+    "look": "look.schema.json",
+    "world": "world.schema.json",
+    "project": "project.schema.json",
+    "candidates": "candidates.schema.json",
+    "hand": "hand.schema.json",
+    "direction": "direction.schema.json",
 }
 
 # Far below one frame at any realistic frame rate, so it cannot mask a real

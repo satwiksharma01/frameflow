@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/hand.schema.json",
+  "title": "FrameflowHand",
+  "description": "What the creator chooses from: the rolled lead, its challengers with verdicts, the agent's own pick and the plain standard, each a full contract.",
+  "type": "object",
+  "required": ["cards"],
+  "additionalProperties": false,
+  "properties": {
+    "cards": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "source", "name", "thesis", "own_world", "story", "first_two_seconds", "signature_move",
+                     "honest_risk"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "description": "What the creator types to choose it." },
+          "kind": { "enum": ["lead", "challenger", "pick", "standard"] },
+          "source": { "type": "string", "minLength": 1, "description": "A world id or a candidate id; \"standard\" for the standard card." },
+          "name": { "type": "string", "minLength": 1 },
+          "thesis": { "type": "string", "minLength": 1, "description": "What the video is, and the default it refuses." },
+          "own_world": { "type": "string", "minLength": 1, "description": "Grade, type voice, caption system, cut rhythm, sound: recognisable with the content removed." },
+          "story": { "type": "string", "minLength": 1 },
+          "first_two_seconds": { "type": "string", "minLength": 1 },
+          "signature_move": { "type": "string", "minLength": 1 },
+          "honest_risk": { "type": "string", "minLength": 1 },
+          "verdict": { "enum": ["wins", "competitive", "declined"] },
+          "kept": { "type": "string", "minLength": 1, "description": "For a declined challenger: the discipline it gave the lead." },
+          "raises": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["from", "discipline"],
+              "additionalProperties": false,
+              "properties": {
+                "from": { "type": "string", "minLength": 1, "description": "The declined challenger's source." },
+                "discipline": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

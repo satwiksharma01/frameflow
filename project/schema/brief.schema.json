@@ -27,6 +27,10 @@
       "minLength": 1,
       "description": "Two or three sentences for the creator: what this video is, what it shows, and how it ends (the call to action)."
     },
+    "mode": {
+      "enum": ["stop", "show", "persuade", "teach", "tell"],
+      "description": "Optional: what success is for the viewer, as creative/modes.md describes it."
+    },
     "skills": {
       "type": "array",
       "description": "Optional: skills from the creator's library this video will use, each with why.",

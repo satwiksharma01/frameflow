@@ -258,6 +258,7 @@ def unsupported_content(path: Path | str) -> list[str]:
     layers = sorted(data.get("layers") or [], key=lambda l: l["number"])
     names = {l["number"]: l.get("label") or f"Track {i}" for i, l in enumerate(layers, start=1)}
     clips = data.get("clips") or []
+    sounds = {f.get("id") for f in data.get("files") or [] if f.get("media_type") == "audio"}
     found: list[str] = []
 
     for layer in layers:
@@ -280,6 +281,8 @@ def unsupported_content(path: Path | str) -> list[str]:
             carried = {"effects"} | ({"alpha", "volume"} if _levels(clip, fps) is not None else set())
             if _framing(clip, int(data["width"]), int(data["height"]), fps) is not None:
                 carried |= {"scale", "scale_x", "scale_y", "location_x", "location_y"}
+            if clip.get("file_id") in sounds and clip.get("has_video") == keyframe(0.0):
+                carried.add("has_video")    # a sound file's cover art kept off, as compile_osp writes it
             changed = [k for k, v in CLIP_DEFAULTS.items() if k not in carried and clip.get(k) != v]
             changed += [k for k in clip if k not in CLIP_DEFAULTS and k not in _PER_CLIP]
             if changed:

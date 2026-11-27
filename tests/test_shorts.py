@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from project import shorts
+from project import shorts, vad
 from project.editor_agent import check_plan
 
 TRANSCRIPT = {
@@ -101,6 +101,17 @@ class TestBuilding(unittest.TestCase):
         self.assertEqual(built, [("short-1", "talk-short-1", True, True, "C:/media/talk.mp4", 10.0),
                                  ("short-2", "talk-short-2", True, True, "C:/media/talk.mp4", 50.0)])
         self.assertEqual([p.name for p in projects], ["talk-short-1.osp", "talk-short-2.osp"])
+
+
+class TestCommandLine(unittest.TestCase):
+    def test_a_speech_model_error_ends_as_a_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "talk.mp4"
+            video.write_bytes(b"")
+            argv = ["shorts", str(video), "--prepare", "--out", str(Path(tmp) / "out")]
+            with mock.patch.object(shorts.first_cut, "prepare", side_effect=vad.VadError("ffmpeg could not read the audio")),                     mock.patch("sys.argv", argv), self.assertRaises(SystemExit) as cm:
+                shorts.main()
+        self.assertIn("could not read the audio", str(cm.exception.code))
 
 
 if __name__ == "__main__":

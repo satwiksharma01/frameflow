@@ -3,13 +3,17 @@ import contextlib
 import dataclasses
 import io
 import json
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from project import produce, verify_cuts
+from project import media as produce_media
+from project import produce, projects, vad, verify_cuts
+from test_eyes import _Clips
 from project.media import _find_tool, level_db, loudness
 from project.validate import ValidationError, validate
 
@@ -622,6 +626,18 @@ class TestBuildingTheProject(unittest.TestCase):
         self.assertEqual(old, self.folder / "Nomad-reel-preview.mp4")
         self.assertFalse(old.exists())
 
+    def test_a_new_build_removes_the_old_look_first(self):
+        inputs = {"footage": [], "music": [],
+                  "assets": [{"path": "C:/x/walk.mp4", "kind": "clip", "duration": 5.0, "size": "1920x1080"}]}
+        board = {"script": "s", "scenes": [
+            {"visual": {"type": "asset", "path": "walk.mp4"}, "narration": "Meet it", "reason": "r"}]}
+        self._built(inputs, board)
+        old = self.folder / produce.LOOK_DIR / "look.json"
+        old.parent.mkdir()
+        old.write_text('{"verdict": "fix", "findings": []}', encoding="utf-8")  # the older video's verdict
+        self._built(inputs, board)
+        self.assertFalse(old.exists())          # so --look-at looks at the new video, not the old verdict
+
     def test_build_ir_fills_each_scenes_span(self):
         board = {"script": "s", "scenes": [
             {"visual": {"type": "title", "text": "Hook"}, "duration": 2.0, "reason": "r"},
@@ -841,6 +857,303 @@ class TestRequests(unittest.TestCase):
 
     def test_scene_seconds(self):
         self.assertEqual([produce.scene_seconds(t) for t in (20, 90, 300, 900)], [None, None, 10.0, 30.0])
+
+
+class TestDirectionInProduce(unittest.TestCase):
+    """The taste engine in produce: a video's project, the brief's mode, the storyboard's Direction, the stages."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        patcher = mock.patch.object(projects, "PROJECTS_DIR", self.root / "projects")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.video = self.root / "v"
+        self.video.mkdir()
+        self._inputs()
+        (self.video / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+
+    def _inputs(self, **extra):
+        (self.video / produce.INPUTS_FILE).write_text(json.dumps(
+            {"prompt": "p", "script": None, "footage": [], "assets": [], "music": [], **extra}), encoding="utf-8")
+
+    def _main(self, *args):
+        out = io.StringIO()
+        with mock.patch("sys.argv", ["produce", str(self.video), *args]), contextlib.redirect_stdout(out):
+            produce.main()
+        return out.getvalue()
+
+    def test_an_unknown_project_is_refused_at_prepare(self):
+        with self.assertRaises(projects.ProjectError):
+            produce.prepare(self.root / "new", "p", None, [], [], [], project="nobody")
+        self.assertFalse((self.root / "new").exists())          # refused before anything was made
+
+    def test_a_known_project_is_recorded(self):
+        projects.new("p", "P")
+        produce.prepare(self.root / "new", "p", None, [], [], [], project="p")
+        inputs = json.loads((self.root / "new" / produce.INPUTS_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(inputs["project"], "p")
+
+    def test_the_brief_request_asks_for_a_mode(self):
+        inputs = {"prompt": "p", "script": None, "footage": [], "assets": [], "music": []}
+        self.assertIn("creative/modes.md", produce.brief_request(Path("C:/v"), inputs))
+
+    def test_the_storyboard_request_carries_a_chosen_direction_and_nothing_without_one(self):
+        plain = produce.storyboard_request(self.video).read_text(encoding="utf-8")
+        self.assertNotIn("## Direction", plain)
+        (self.video / "direction.json").write_text(json.dumps({
+            "name": "Care label", "thesis": "The reel reads like its own label.", "own_world": "True colour.",
+            "story": "Detail, then the fit.", "first_two_seconds": "The collar.", "signature_move": "Label lines change.",
+            "source": {"kind": "pin"}, "seed": None, "pinned": True}), encoding="utf-8")
+        directed = produce.storyboard_request(self.video).read_text(encoding="utf-8")
+        self.assertIn("## Direction", directed)
+        self.assertIn("The reel reads like its own label.", directed)
+        self.assertLess(directed.index("## Direction"), directed.index("## How"))
+        self.assertEqual(directed.replace(produce.direction.storyboard_section(self.video) + "\n", ""), plain)
+
+    def test_direction_is_refused_before_the_brief_is_confirmed(self):              # Review Focus 2
+        (self.video / produce.BRIEF_FILE).write_text(json.dumps(dict(BRIEF, open_questions=["Price?"])),
+                                                     encoding="utf-8")
+        with self.assertRaises(SystemExit) as cm:
+            self._main("--direction")
+        self.assertIn("Price?", str(cm.exception.code))
+
+    def test_a_deleted_project_is_named_not_a_traceback(self):                       # Review Focus 4
+        self._inputs(project="gone")
+        with self.assertRaises(produce.ProduceError) as cm:
+            produce.storyboard_request(self.video)
+        self.assertIn("project gone is not in projects/", str(cm.exception))
+        with self.assertRaises(SystemExit) as cm:
+            self._main("--direction")
+        self.assertIn("project gone is not in projects/", str(cm.exception.code))
+
+    def test_the_project_s_brand_kit_is_used(self):
+        projects.new("p", "P")
+        (self.root / "projects" / "p" / "brand.json").write_text('{"accent": "#FF3366"}', encoding="utf-8")
+        self._inputs(project="p")
+        self.assertIn("#FF3366", produce.storyboard_request(self.video).read_text(encoding="utf-8"))
+
+    def test_repeated_file_flags_add_up(self):
+        a, b = self.root / "a.png", self.root / "b.png"
+        a.write_bytes(b""), b.write_bytes(b"")
+        with mock.patch.object(produce, "prepare", return_value=self.video / "brief_request.md") as made:
+            self._main("--prepare", "p", "--asset", str(a), "--asset", str(b))
+        self.assertEqual(made.call_args.args[4], [a, b])
+
+    def test_a_file_flag_needs_a_file(self):                                         # Review Focus 3
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self._main("--prepare", "p", "--asset")
+
+    def test_a_reroll_names_its_register(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self._main("--reroll")
+        with mock.patch.object(produce.direction, "reroll", return_value=self.video / "direction" / "request.md") as rolled:
+            self._main("--reroll", "safer")
+        self.assertEqual(rolled.call_args.args[1], "safer")
+
+    def test_a_speech_model_error_ends_as_a_message(self):
+        with mock.patch.object(produce, "prepare", side_effect=vad.VadError("ffmpeg could not read the audio of x.mp4")):
+            with self.assertRaises(SystemExit) as cm:
+                self._main("--prepare", "p")
+        self.assertIn("could not read the audio", str(cm.exception.code))
+
+    def test_the_direction_stage_runs_from_the_command_line(self):
+        out = self._main("--direction")
+        self.assertIn("Next: read", out)
+        self.assertTrue((self.video / "direction" / "request.md").is_file())
+
+    def test_a_direction_in_any_script_prints_from_a_real_process(self):
+        name = "लेबल · ₹999"           # what a hand or a world can hold, beyond Windows' code page
+        (self.video / "direction.json").write_text(json.dumps({
+            "name": name, "thesis": "t", "own_world": "o", "story": "s", "first_two_seconds": "f",
+            "signature_move": "m", "source": {"kind": "pin"}, "seed": None, "pinned": True}), encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"}
+        done = subprocess.run([sys.executable, "-m", "project.produce", str(self.video), "--direction"],
+                              cwd=Path(produce.__file__).parent.parent, capture_output=True, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr.decode("utf-8", "replace"))
+        self.assertIn(name, done.stdout.decode("utf-8"))
+
+
+class TestRotation(unittest.TestCase):
+    PROBED = {"streams": [{"codec_type": "video", "width": 1280, "height": 720, "r_frame_rate": "30/1",
+                           "avg_frame_rate": "30/1", "duration": "13.7", "side_data_list": [{"rotation": -90}]}],
+              "format": {"duration": "13.7"}}
+
+    def test_analyze_reads_the_display_rotation(self):
+        with mock.patch.object(produce_media, "probe", return_value=self.PROBED):
+            self.assertEqual(produce_media.analyze("x.mp4").rotation, -90)
+
+    def test_a_clip_on_its_side_is_listed_upright_and_upside_down_is_not(self):    # Review Focus 4
+        for rotation, size in ((-90, "720x1280"), (90, "720x1280"), (180, "1280x720"), (0, "1280x720")):
+            info = produce_media.FrameRateInfo(30.0, 30.0, False, 1280, 720, 13.7, True, rotation=rotation)
+            with mock.patch.object(produce, "analyze", return_value=info):
+                self.assertEqual(produce.asset_entry(Path("WA0025.mp4"))["size"], size)
+
+
+class TestEyesInProduce(_Clips):
+    def setUp(self):
+        super().setUp()
+        self.video = self.dir / "video"
+        self.red_blue = self.clip("red-blue.mp4", ["color=red:s=180x320:d=2", "color=blue:s=180x320:d=2"])
+        self.red = self.clip("red.mp4", ["color=red:s=180x320:d=1"])
+
+    def test_a_recordings_speech_is_measured_once(self):
+        talk = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])
+        transcript = {"source": talk.as_posix(), "speech": [{"start": 0.1, "end": 0.8}]}
+        with mock.patch.object(produce.first_cut, "prepare", return_value=transcript), \
+             mock.patch.object(produce.eyes.vad, "installed", return_value=True), \
+             mock.patch.object(produce.eyes.vad, "speech") as heard:
+            produce.prepare(self.video, "a reel", None, [talk], [], [])
+        heard.assert_not_called()
+        study = json.loads((self.video / "eyes" / "talk" / "study.json").read_text(encoding="utf-8"))
+        self.assertEqual(study["speech"], transcript["speech"])
+
+    def test_a_recording_prepared_without_the_speech_model_still_studies(self):     # Review Focus 1
+        talk = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])
+        with mock.patch.object(produce.first_cut, "prepare", return_value={"source": talk.as_posix()}), \
+             mock.patch.object(produce.eyes.vad, "installed", return_value=False):
+            produce.prepare(self.video, "a reel", None, [talk], [], [])
+        study = json.loads((self.video / "eyes" / "talk" / "study.json").read_text(encoding="utf-8"))
+        self.assertEqual((study["speech"], study["speech_measured"]), ([], False))
+
+    def test_prepare_studies_clips_and_asks_for_moments(self):
+        path = produce.prepare(self.video, "a reel", None, [], [self.red_blue, self.red], [])
+        self.assertEqual(path, self.video / "eyes" / "shots_request.md")
+        request = path.read_text(encoding="utf-8")
+        self.assertIn("red-blue.mp4", request)
+        self.assertIn("--shots", request)
+        self.assertIn("python -m project.eyes sheet", request)
+        inputs = json.loads((self.video / produce.INPUTS_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(inputs["assets"][0]["eyes"], "eyes/red-blue")
+        self.assertTrue((self.video / "eyes" / "red-blue" / "sheet.jpg").exists())
+
+    def test_a_clip_changed_since_its_moments_is_described_again(self):
+        produce.prepare(self.video, "a reel", None, [], [self.red], [])
+        moments = self.video / "eyes" / "red" / produce.MOMENTS_FILE
+        moments.write_text(json.dumps({"moments": [
+            {"start": 0, "end": 1, "what": "red", "framing": "wide", "subject": "red"}]}), encoding="utf-8")
+        self.clip("red.mp4", ["color=green:s=180x320:d=2"])     # the creator replaced the clip
+        request = produce.prepare(self.video, "a reel", None, [], [self.red], []).read_text(encoding="utf-8")
+        self.assertFalse(moments.exists())
+        self.assertNotIn("Already described", request)
+
+    def test_a_clip_without_cuts_says_so(self):
+        request = produce.prepare(self.video, "a reel", None, [], [self.red_blue, self.red], []).read_text(encoding="utf-8")
+        self.assertIn("cuts at 2.0 s;", request)
+        self.assertIn("1.0 s; no cuts;", request)
+
+    def test_shots_store_moments_and_write_the_brief_request_with_shot_lines(self):
+        produce.prepare(self.video, "a reel", None, [], [self.red_blue, self.red], [])
+        (self.video / "eyes" / "moments.json").write_text(json.dumps({"clips": [{"clip": "red-blue.mp4", "moments": [
+            {"start": 0, "end": 2, "what": "red", "framing": "wide", "subject": "red"},
+            {"start": 2, "end": 4, "what": "blue", "framing": "wide", "subject": "blue"}]}]}), encoding="utf-8")
+        brief = produce.shots(self.video).read_text(encoding="utf-8")
+        self.assertIn("- red-blue.mp4 2.0–4.0 s · wide · blue", brief)
+        self.assertIn("- red.mp4, 1.0 s", brief)              # no moments: its study line
+        self.assertNotIn("sheet.jpg", brief)
+        self.assertTrue((self.video / "eyes" / "red-blue" / "moments.json").exists())
+
+    def test_moments_for_a_clip_the_video_does_not_have_are_refused(self):
+        produce.prepare(self.video, "a reel", None, [], [self.red], [])
+        (self.video / "eyes" / "moments.json").write_text(json.dumps({"clips": [{"clip": "nope.mp4", "moments": []}]}),
+                                                          encoding="utf-8")
+        with self.assertRaises(produce.ProduceError):
+            produce.shots(self.video)
+
+    def test_moments_past_a_clips_end_are_refused(self):
+        produce.prepare(self.video, "a reel", None, [], [self.red], [])
+        (self.video / "eyes" / "moments.json").write_text(json.dumps({"clips": [{"clip": "red.mp4", "moments": [
+            {"start": 0, "end": 5, "what": "red", "framing": "wide", "subject": "red"}]}]}), encoding="utf-8")
+        with self.assertRaises(produce.ProduceError) as cm:
+            produce.shots(self.video)
+        self.assertIn("red.mp4, moment 1", str(cm.exception))
+
+    def test_a_video_with_only_music_goes_straight_to_the_brief(self):
+        path = produce.prepare(self.video, "p", None, [], [], [_tone(self.dir / "m.wav", 2.0)])
+        self.assertEqual(path.name, produce.BRIEF_REQUEST)
+
+
+DIRECTION = {"thesis": "The reel reads like the garment's own label, not a caption over a bedroom."}
+
+
+class TestLook(unittest.TestCase):
+    """The look step: a sheet of the built preview, judged by the agent against the plan."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.video = Path(tmp.name)
+        (self.video / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+        (self.video / produce.STORYBOARD_FILE).write_text(json.dumps({"script": "s", "scenes": [
+            {"visual": {"type": "title", "text": "PERFECT GREY HENLEY"}, "duration": 1.4, "reason": "the hook"},
+            {"visual": {"type": "asset", "path": "C:/x/WA0021.mp4", "start": 11.9}, "duration": 1.3, "reason": "r"},
+            {"visual": {"type": "asset", "path": "C:/x/WA0020.mp4", "start": 4.4}, "duration": 6.3, "reason": "r"}]}),
+            encoding="utf-8")
+        subprocess.run([_find_tool("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=180x320:d=9",
+                        "-pix_fmt", "yuv420p", str(self.video / "Nomad-reel-preview.mp4")], check=True)
+        (self.video / produce.REPORT_FILE).write_text(json.dumps({
+            "seconds": 9.0, "target_seconds": 15, "joins": None, "preview": "Nomad-reel-preview.mp4",
+            "scenes": [{"start": 0.0, "end": 1.4}, {"start": 1.4, "end": 2.73}, {"start": 2.73, "end": 9.0}],
+            "picture": {"looked": 9, "problems": []}}), encoding="utf-8")
+
+    def test_the_hook_and_every_scene_start_are_on_the_sheet(self):
+        times = produce.look_times(9.0, [0.0, 1.4, 2.73])
+        for t in (0.0, 0.5, 1.0, 1.5, 2.0, 1.45, 2.78):
+            self.assertTrue(any(abs(t - x) < 0.051 for x in times), t)
+        self.assertLessEqual(len(times), 9.0 / 0.5 + 8)
+
+    def test_no_two_frames_on_the_sheet_are_nearly_the_same(self):
+        times = produce.look_times(9.17, [0.0, 1.4, 2.73, 4.0])
+        self.assertGreaterEqual(min(b - a for a, b in zip(times, times[1:])), 0.25, times)
+        self.assertIn(4.05, times)                  # a scene's first frame wins over the steady one beside it
+        self.assertIn(0.05, times)
+
+    def test_the_sheets_labels_can_be_drawn(self):
+        with mock.patch.object(produce.eyes, "draw_sheet", wraps=produce.eyes.draw_sheet) as draw:
+            produce.look_at(self.video)
+        labels = draw.call_args.args[1]
+        self.assertTrue(all(label.isascii() for label in labels), labels)   # OpenCV's font draws ASCII only
+        self.assertIn("scene 2", labels[3] + labels[4])
+
+    def test_the_request_carries_the_scenes_the_direction_and_the_safe_area(self):
+        (self.video / "direction.json").write_text(json.dumps(DIRECTION), encoding="utf-8")
+        _, request = produce.look_at(self.video)
+        text = request.read_text(encoding="utf-8")
+        self.assertIn("scene 2", text)
+        self.assertIn("PERFECT GREY HENLEY", text)
+        self.assertIn(DIRECTION["thesis"], text)
+        self.assertIn("14%", text)
+        self.assertTrue((self.video / "look" / "sheet.jpg").exists())
+
+    def test_the_builds_own_picture_problems_reach_the_request(self):
+        report = json.loads((self.video / produce.REPORT_FILE).read_text(encoding="utf-8"))
+        report["picture"] = {"looked": 9, "problems": [{"at": 7.0, "what": "black"}, {"at": None, "what": "odd"}]}
+        (self.video / produce.REPORT_FILE).write_text(json.dumps(report), encoding="utf-8")
+        _, request = produce.look_at(self.video)
+        text = request.read_text(encoding="utf-8")
+        self.assertIn("- 7.0 s: black", text)
+        self.assertIn("- odd", text)
+
+    def test_findings_are_checked_and_read_back(self):
+        produce.look_at(self.video)
+        answer = self.video / "look" / "look.json"
+        answer.write_text(json.dumps({"verdict": "fix", "findings": [{"at": 30.0, "what": "x", "fix": "y"}]}),
+                          encoding="utf-8")
+        with self.assertRaises(produce.ProduceError):
+            produce.look_at(self.video)
+        answer.write_text(json.dumps({"verdict": "fix", "findings": [
+            {"at": 0.5, "scene": 1, "what": "the title covers his face", "fix": "move it to the top"}]}),
+            encoding="utf-8")
+        said, path = produce.look_at(self.video)
+        self.assertIsNone(path)
+        self.assertIn("0.5s (scene 1): the title covers his face. Fix: move it to the top", said)
+
+    def test_look_before_a_build_says_to_build(self):                              # Review Focus 5
+        (self.video / produce.REPORT_FILE).unlink()
+        with self.assertRaises(produce.ProduceError) as cm:
+            produce.look_at(self.video)
+        self.assertIn("build the video first", str(cm.exception))
 
 
 if __name__ == "__main__":

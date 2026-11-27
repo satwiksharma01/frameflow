@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/direction.schema.json",
+  "title": "FrameflowDirection",
+  "description": "The chosen direction: a contract the storyboard follows, with where it came from and the roll's seed.",
+  "type": "object",
+  "required": ["name", "thesis", "own_world", "story", "first_two_seconds", "signature_move", "source", "seed", "pinned"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "thesis": { "type": "string", "minLength": 1 },
+    "own_world": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
+    "first_two_seconds": { "type": "string", "minLength": 1 },
+    "signature_move": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["world", "candidate", "pin", "standard"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "seed": { "type": ["string", "null"], "pattern": "^[0-9a-f]{16}$", "description": "The roll's seed reference; null when pinned." },
+    "pinned": { "type": "boolean" },
+    "world_path": { "type": "string", "minLength": 1, "description": "The world file it came from, when a catalog world." }
+  }
+}

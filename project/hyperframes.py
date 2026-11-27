@@ -18,6 +18,7 @@ style. What it leaves out keeps Frameflow's own look.
 Renders are cached by content in the project's graphics/ folder, so building
 the same project again does not render again.
 """
+import contextlib
 import hashlib
 import html
 import json
@@ -101,6 +102,20 @@ def brand() -> dict:
             if not kit[key].is_file():
                 raise HyperFramesError(f"the brand kit's {key}, {kit[key]}, is not there")
     return {**BRAND, **kit}
+
+
+@contextlib.contextmanager
+def kit_file(path: Path | None):
+    """Use this brand kit, a project's own, instead of brand/ for the block; with None, brand/ as always."""
+    global BRAND_FILE
+    if path is None:
+        yield
+        return
+    before, BRAND_FILE = BRAND_FILE, path
+    try:
+        yield
+    finally:
+        BRAND_FILE = before
 
 
 def brand_css(kit: dict, fallback: str) -> tuple[str, str]:

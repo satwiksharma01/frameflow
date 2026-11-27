@@ -284,6 +284,27 @@ and spoken moment falls. Checked by rebuilding the reel with the creator in it
   twice, and with Gemini chosen stopped at $1.06 over the $0 cap before any call
   (see findings).
 
+### 6. The creative engine
+
+Six pieces that keep a video off its category's default, with the creator
+directing; trends stay a separate product. Before them, the agent's eyes
+(stage 1, `8f8febe`): each clip studied, its moments named, and the built
+video looked at.
+
+- **1. The taste engine:** a direction step between brief and storyboard.
+  The agent names the rut and frames the video; Frameflow's code rolls from a
+  recorded seed, inside a project from its own catalog of worlds; the creator
+  chooses from one hand, re-rolls or pins; the storyboard follows the chosen
+  direction as a contract. *Done when:* a video made in a project gets a
+  catalog world as its lead, and its storyboard request carries the contract.
+  *Status:* built (2026-11-27, not committed): on the outfit reel's clips in a
+  scratch project of two worlds, the roll dealt the care-label world with the
+  fitting-room world challenging it; the chosen direction reached the
+  storyboard, and the build carried one label line per cut, in true colour.
+- **2 to 6, later:** new kinds of edit (zooms, ramps, transitions, sound
+  effects); the craft playbooks; checking the result against the direction;
+  refine commands; the app.
+
 ### Later, outside this repository
 
 Plugging Frameflow into Produk, when that work starts. Not before.
