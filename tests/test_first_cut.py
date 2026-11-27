@@ -26,6 +26,7 @@ from project.editor_agent import (
     check_plan,
     propose_edit_plan,
 )
+from project import first_cut, vad
 from project.media import choose_cfr_rate
 from project.plan_to_ir import edit_plan_to_ir
 from project.providers import ProviderError, get_provider
@@ -512,6 +513,18 @@ class TestProviderSelection(unittest.TestCase):
     def test_unknown_provider_is_rejected(self):
         with self.assertRaisesRegex(ProviderError, "unknown provider"):
             get_provider("gemini-direct")
+
+
+class TestCommandLine(unittest.TestCase):
+    def test_a_speech_model_error_ends_as_a_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "talk.mp4"
+            video.write_bytes(b"")
+            argv = ["first_cut", str(video), "--prepare", "--out", str(Path(tmp) / "out")]
+            with mock.patch.object(first_cut, "prepare", side_effect=vad.VadError("ffmpeg could not read the audio")), \
+                    mock.patch("sys.argv", argv), self.assertRaises(SystemExit) as cm:
+                first_cut.main()
+        self.assertIn("could not read the audio", str(cm.exception.code))
 
 
 if __name__ == "__main__":

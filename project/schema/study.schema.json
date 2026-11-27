@@ -4,7 +4,7 @@
   "title": "FrameflowClipStudy",
   "description": "What Frameflow measured of one clip for the agent's eyes: where it cuts, a sheet of its frames, how good each sampled frame looks, and where someone speaks.",
   "type": "object",
-  "required": ["source", "stamp", "duration", "width", "height", "fps", "cuts", "step", "samples", "speech", "speech_seconds", "sheet"],
+  "required": ["source", "stamp", "duration", "width", "height", "fps", "cuts", "step", "samples", "speech", "speech_seconds", "speech_measured", "sheet"],
   "additionalProperties": false,
   "properties": {
     "source": { "type": "string", "minLength": 1 },
@@ -53,6 +53,10 @@
       }
     },
     "speech_seconds": { "type": "number", "minimum": 0 },
+    "speech_measured": {
+      "type": "boolean",
+      "description": "True when the speech model measured the clip, or it has no sound to measure; a study without it is made again once the model is installed."
+    },
     "sheet": { "type": "string", "minLength": 1 }
   }
 }

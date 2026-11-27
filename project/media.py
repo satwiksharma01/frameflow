@@ -56,6 +56,7 @@ class FrameRateInfo:
     height: int
     duration_seconds: float
     has_audio: bool
+    rotation: int = 0       # degrees a player turns the picture (a phone clip stored on its side: -90)
 
     @property
     def mode(self) -> str:
@@ -145,6 +146,8 @@ def analyze(video_path: Path | str) -> FrameRateInfo:
         height=int(video["height"]),
         duration_seconds=duration,
         has_audio=any(s.get("codec_type") == "audio" for s in data["streams"]),
+        rotation=int(next((d["rotation"] for d in video.get("side_data_list", []) if "rotation" in d),
+                          video.get("tags", {}).get("rotate", 0))),
     )
 
 

@@ -180,15 +180,16 @@ def shot_lines(name: str, study: dict, moments: list[dict] | None) -> list[str]:
             f"speech {study['speech_seconds']:.1f} s · {found}"]
 
 
-def study(clip: Path, out_dir: Path) -> dict:
-    """The clip's study, written to `out_dir` with its sheet; one already there for the same file is kept."""
+def study(clip: Path, out_dir: Path, speech: list[dict] | None = None) -> dict:
+    """The clip's study, written to `out_dir` with its sheet; one already there for the same file is kept.
+    `speech`, when given, is where someone speaks as already measured (a recording's transcript), not measured again."""
     clip, out_dir = Path(clip), Path(out_dir)
     given = stamp(clip)
     kept = out_dir / STUDY
     if kept.is_file():
         old = json.loads(kept.read_text(encoding="utf-8"))
-        if old.get("stamp") == given:
-            return old
+        if old.get("stamp") == given and (old.get("speech_measured") or (speech is None and not vad.installed())):
+            return old      # made again once the speech model is there to measure what it could not
     info = probe(clip)
     streams = info.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
@@ -200,14 +201,15 @@ def study(clip: Path, out_dir: Path) -> dict:
     frames = frames_at(clip, times)
     out_dir.mkdir(parents=True, exist_ok=True)
     draw_sheet(frames, [f"{t:.1f}s" for t in times], out_dir / SHEET)
-    heard = (vad.speech(clip) if vad.installed() and any(s.get("codec_type") == "audio" for s in streams)
-             else [])
+    sound = any(s.get("codec_type") == "audio" for s in streams)
+    heard = speech if speech is not None else vad.speech(clip) if sound and vad.installed() else []
     found = {"source": clip.resolve().as_posix(), "stamp": given, "duration": round(duration, 3),
              "width": int(frames[0].shape[1]), "height": int(frames[0].shape[0]),
              "fps": round(float(Fraction(video.get("r_frame_rate", "0/1"))), 3) if video.get("r_frame_rate") != "0/0" else 0.0,
              "cuts": cuts(clip), "step": round(step, 3),
              "samples": [{"t": t, **m} for t, m in zip(times, measures(frames))],
-             "speech": heard, "speech_seconds": round(sum(r["end"] - r["start"] for r in heard), 3), "sheet": SHEET}
+             "speech": heard, "speech_seconds": round(sum(r["end"] - r["start"] for r in heard), 3),
+             "speech_measured": speech is not None or vad.installed() or not sound, "sheet": SHEET}
     validate(found, "study")
     kept.write_text(json.dumps(found, indent=2) + "\n", encoding="utf-8")
     return found

@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 
 from project import (beats, broll, captions, direction, eyes, first_cut, generate, hyperframes, look, openshot_build,
-                     preview, projects, reference, reframe, research, voiceover)
+                     preview, projects, reference, reframe, research, vad, voiceover)
 from project.cutpoints import frame_align, kept_pieces, place_in_pause, trim_edges
 from project.editors import DEFAULT, EDITORS
 from project.eyes import stamp
@@ -109,8 +109,9 @@ def asset_entry(path: Path) -> dict:
     if path.suffix.lower() in IMAGE_SUFFIXES:
         return {"path": path.as_posix(), "kind": "image"}
     info = analyze(path)
+    width, height = (info.height, info.width) if abs(info.rotation) % 180 == 90 else (info.width, info.height)
     return {"path": path.as_posix(), "kind": "clip", "duration": info.duration_seconds,
-            "size": f"{info.width}x{info.height}"}
+            "size": f"{width}x{height}"}     # as it plays: a phone clip stored on its side is upright
 
 
 def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
@@ -129,10 +130,12 @@ def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
               "looks": [{"path": path.resolve().as_posix()} for path in looks]}
     if project is not None:
         inputs["project"] = project
+    measured: dict[Path, list[dict] | None] = {}       # each recording's speech, measured once with its transcript
     for video in footage:
         # Each recording is transcribed exactly as for a first cut, into its own folder.
         out, given = folder / "footage" / video.stem, stamp(video)     # as it was before it was transcribed
         transcript = first_cut.prepare(video.resolve(), out, language)
+        measured[video] = transcript.get("speech")
         inputs["footage"].append({"name": video.name, "source": transcript["source"],
                                   "duration": analyze(transcript["source"]).duration_seconds,
                                   "folder": out.relative_to(folder).as_posix(), "stamp": given})
@@ -155,7 +158,7 @@ def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
         studied = folder / name / eyes.STUDY
         if studied.is_file() and json.loads(studied.read_text(encoding="utf-8")).get("stamp") != stamp(video):
             (folder / name / MOMENTS_FILE).unlink(missing_ok=True)      # the moments of the clip as it was
-        eyes.study(video, folder / name)
+        eyes.study(video, folder / name, speech=measured.get(video))
         entry["eyes"] = name
     first_cut._write_json(folder / INPUTS_FILE, inputs)
     if clips:
@@ -1085,15 +1088,17 @@ def main() -> None:
     stage.add_argument("--direction", action="store_true",
                        help="after the brief is confirmed: the direction round, the next step each time it is run")
     stage.add_argument("--choose", metavar="CARD", help="the creator's choice from the direction's hand")
-    stage.add_argument("--reroll", nargs="?", const="plain", choices=direction.REGISTERS,
-                       help="another direction round: plain (the default), safer or bolder")
+    stage.add_argument("--reroll", choices=direction.REGISTERS,
+                       help="another direction round: plain, safer or bolder")
     stage.add_argument("--pin", metavar="WORDS", help="the creator's own direction, in their words")
     parser.add_argument("--project", metavar="SLUG", help="with --prepare: make the video in projects/<slug>")
     parser.add_argument("--script", type=Path, help="a script the creator wrote")
-    parser.add_argument("--footage", type=Path, nargs="*", default=[], help="the creator's recordings")
-    parser.add_argument("--asset", type=Path, nargs="*", default=[], help="images or clips to use")
-    parser.add_argument("--music", type=Path, nargs="*", default=[], help="music files to choose from")
-    parser.add_argument("--look", type=Path, nargs="*", default=[], help="LUTs (.cube) to choose the look from")
+    # Each may be repeated or take several files; repeated, the files add up.
+    parser.add_argument("--footage", type=Path, nargs="+", action="extend", default=[], help="the creator's recordings")
+    parser.add_argument("--asset", type=Path, nargs="+", action="extend", default=[], help="images or clips to use")
+    parser.add_argument("--music", type=Path, nargs="+", action="extend", default=[], help="music files to choose from")
+    parser.add_argument("--look", type=Path, nargs="+", action="extend", default=[],
+                        help="LUTs (.cube) to choose the look from")
     parser.add_argument("--language", default="auto", help="spoken language of the footage, or 'auto'")
     parser.add_argument("--open", action="store_true", help="open the project in OpenShot when built")
     parser.add_argument("--budget", type=float, default=0.0, metavar="DOLLARS",
@@ -1158,7 +1163,7 @@ def main() -> None:
             print(f"\nBuilt: {build(folder, args.open, args.budget)}")
     except (ProduceError, MediaError, TranscriptionError, first_cut.NoSpeechError, voiceover.VoiceError,
             hyperframes.HyperFramesError, ProfileError, generate.GenerateError, reference.AgentVideoError,
-            eyes.EyesError, projects.ProjectError, direction.DirectionError) as e:
+            eyes.EyesError, projects.ProjectError, direction.DirectionError, vad.VadError) as e:
         sys.exit(f"\n{e}")
 
 

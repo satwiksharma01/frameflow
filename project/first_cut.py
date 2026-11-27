@@ -354,7 +354,7 @@ def main() -> None:
                                 editor=editor, captions=args.captions, vertical=args.vertical,
                                 screen_recording=screen_recording)
     except (NoSpeechError, ProviderError, PlanError, MediaError, TranscriptionError,
-            ProfileError, HyperFramesError) as e:
+            ProfileError, HyperFramesError, vad.VadError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 
     print(f"\nFirst cut: {project}")

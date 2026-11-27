@@ -13,7 +13,7 @@ Frameflow does the mechanical work: transcribing recordings, reading the voiceov
    python -m project.produce output/<name> --prepare "<prompt>" [--script FILE] [--footage VIDEO ...] [--asset FILE ...] [--music FILE ...] [--look LUT ...] [--project SLUG]
    ```
 
-   Give each kind once, followed by all its files: `--asset A B C`, not `--asset A --asset B`. When the user works in a project (their channel, page or series in `projects/`), pass `--project <slug>`: its catalog of worlds then leads the direction, and its brand kit is used. `--look` takes the user's own colour LUTs (`.cube` files) to choose the video's look from; OpenShot's own are offered either way.
+   A flag takes several files (`--asset A B C`) or may be repeated (`--asset A --asset B`). When the user works in a project (their channel, page or series in `projects/`), pass `--project <slug>`: its catalog of worlds then leads the direction, and its brand kit is used. `--look` takes the user's own colour LUTs (`.cube` files) to choose the video's look from; OpenShot's own are offered either way.
 
    If it stops on a recording with "no usable speech", tell the user the measured numbers and stop. When the message says the clip may have no talking, suggest passing it with `--asset` (a picture or clip) instead of `--footage`.
 
@@ -24,7 +24,7 @@ Frameflow does the mechanical work: transcribing recordings, reading the voiceov
 4. **Direction.** A committed look for this video, before its storyboard. Each run of `python -m project.produce output/<name> --direction` does the next thing:
    1. Run it, read `direction/request.md` in full (and the `creative/` files it names), and write `direction/candidates.json`: the framing, and the seven candidates when it asks for them.
    2. Run it again: Frameflow rolls. Read `direction/hand_request.md` in full, read the world files it names, and write `direction/hand.json`.
-   3. Run it again and show the user the hand it prints, as it prints it. **Wait for them to choose, re-roll or pin.** Then run `--choose <card id>`, `--reroll [plain|safer|bolder]` (and go round again from 1), or `--pin "<their words>"` (then write `direction.json` as the request asks).
+   3. Run it again and show the user the hand it prints, as it prints it. **Wait for them to choose, re-roll or pin.** Then run `--choose <card id>`, `--reroll plain|safer|bolder` (and go round again from 1), or `--pin "<their words>"` (then write `direction.json` as the request asks).
 
    Skip the step when the user is making it like a reference video (below), or asked for the plain standard: then `--choose standard` from a hand.
 

@@ -42,12 +42,13 @@ def _generated(folder: Path) -> tuple[Path, Path]:
     return picture, music
 
 
-def _studied(clip: Path, out_dir: Path) -> dict:
+def _studied(clip: Path, out_dir: Path, speech: list[dict] | None = None) -> dict:
     """eyes.study stood in for: a two-second clip with nothing flagged, written where prepare looks for it."""
     study = {"source": Path(clip).as_posix(), "stamp": {"path": Path(clip).as_posix(), "bytes": 0, "mtime_ns": 0},
              "duration": 2.0, "width": 1080, "height": 1920, "fps": 30.0, "cuts": [], "step": 0.5,
-             "samples": [{"t": 0.0, "sharp": 100.0, "bright": 120.0, "motion": 0.0}], "speech": [],
-             "speech_seconds": 0.0, "sheet": "sheet.jpg"}
+             "samples": [{"t": 0.0, "sharp": 100.0, "bright": 120.0, "motion": 0.0}], "speech": speech or [],
+             "speech_seconds": round(sum(r["end"] - r["start"] for r in speech or []), 3), "speech_measured": True,
+             "sheet": "sheet.jpg"}
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "study.json").write_text(json.dumps(study), encoding="utf-8")
     return study

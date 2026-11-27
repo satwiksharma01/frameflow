@@ -28,6 +28,7 @@ from project.hyperframes import HyperFramesError
 from project.media import MediaError
 from project.openshot_template import ProfileError
 from project.transcribe import TranscriptionError
+from project.vad import VadError
 from project.validate import ValidationError, load_schema, validate
 
 REQUEST_FILE = "shorts_request.md"
@@ -187,7 +188,7 @@ def main() -> None:
             sys.exit(f"no transcript at {transcript_path}; run with --prepare first")
         transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
         projects = build(video, out_dir, load_plan(out_dir, transcript), verify=not args.no_verify)
-    except (NoSpeechError, PlanError, MediaError, TranscriptionError, ProfileError, HyperFramesError) as e:
+    except (NoSpeechError, PlanError, MediaError, TranscriptionError, ProfileError, HyperFramesError, VadError) as e:
         sys.exit(f"\nStopped: {e}\nIntermediate files are in {out_dir}")
 
     print("\nShorts:")

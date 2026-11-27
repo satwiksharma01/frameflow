@@ -225,6 +225,24 @@ class TestDirectionStep(unittest.TestCase):
         again = json.loads((self.video / "direction" / "roll.json").read_text(encoding="utf-8"))
         self.assertNotEqual(again["lead"]["id"], first["lead"]["id"])
 
+    def test_a_round_keeps_what_it_asked_for_when_the_catalog_changes(self):
+        projects.new("e", "E")                                                 # an empty catalog: candidates asked
+        inputs = {**self.inputs, "project": "e"}
+        _, path = direction.advance(self.video, BRIEF, inputs)
+        self.assertIn("seven candidates", path.read_text(encoding="utf-8"))
+        (self.worlds.parent.parent / "e" / "worlds" / "care-label.md").write_text(CARE_LABEL, encoding="utf-8")
+        _write(self.video / "direction" / "candidates.json", {"framing": FRAMING, "candidates": CANDIDATES})
+        direction.advance(self.video, BRIEF, inputs)                          # not refused for "candidates: []"
+        rolled = json.loads((self.video / "direction" / "roll.json").read_text(encoding="utf-8"))
+        self.assertEqual(rolled["lead"]["kind"], "candidate")
+        self.assertEqual(rolled["challengers"], ["care-label"])
+
+    def test_candidates_lead_when_the_roll_is_told_so(self):
+        worlds = [_world("a", "print")]
+        dealt = direction.roll(direction.seed_key(BRIEF, "d", 0, "plain"), worlds, CANDIDATES, set(), "plain",
+                               candidates_lead=True)
+        self.assertEqual((dealt["lead"]["kind"], dealt["challengers"]), ("candidate", ["a"]))
+
     def test_a_pin_skips_the_roll(self):
         path = direction.pin(self.video, "like a skate video on tape", BRIEF)
         request = path.read_text(encoding="utf-8")

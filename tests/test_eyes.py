@@ -58,6 +58,31 @@ class TestStudy(_Clips):
         with mock.patch.object(eyes, "frames_at", side_effect=AssertionError("read frames again")):
             eyes.study(clip, self.out)
 
+    def test_a_study_made_before_the_speech_model_is_made_again_once_it_is_installed(self):
+        clip = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])          # with its tone
+        with mock.patch.object(eyes.vad, "installed", return_value=False):
+            first = eyes.study(clip, self.out)
+        self.assertFalse(first["speech_measured"])
+        with mock.patch.object(eyes.vad, "installed", return_value=True), \
+             mock.patch.object(eyes.vad, "speech", return_value=[{"start": 0.1, "end": 0.6}]) as heard:
+            second = eyes.study(clip, self.out)
+            again = eyes.study(clip, self.out)
+        self.assertEqual(heard.call_count, 1)                                # made again once, then kept
+        self.assertEqual(second["speech"], [{"start": 0.1, "end": 0.6}])
+        self.assertEqual(again, second)
+
+    def test_a_study_takes_speech_already_measured(self):
+        clip = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])
+        with mock.patch.object(eyes.vad, "installed", return_value=True), mock.patch.object(eyes.vad, "speech") as heard:
+            found = eyes.study(clip, self.out, speech=[{"start": 0.2, "end": 0.9}])
+        heard.assert_not_called()
+        self.assertAlmostEqual(found["speech_seconds"], 0.7)
+
+    def test_a_clip_with_no_sound_counts_as_measured(self):
+        clip = self.clip("silent.mp4", ["color=red:s=180x320:d=1"], audio=False)
+        with mock.patch.object(eyes.vad, "installed", return_value=False):
+            self.assertTrue(eyes.study(clip, self.out)["speech_measured"])
+
     def test_a_clip_without_audio_has_no_speech(self):                          # Review Focus 1
         study = eyes.study(self.clip("mute.mp4", ["color=red:s=180x320:d=1"], audio=False), self.out)
         self.assertEqual(study["speech"], [])

@@ -64,10 +64,12 @@ def _deal(ranked: list[dict], lead_family: str, limit: int) -> list[str]:
     return [item["id"] for item in picked]
 
 
-def roll(key: str, worlds: list[World], candidates: list[dict], shown: set[str], register: str) -> dict:
-    """What leads this round, and which catalog worlds challenge it."""
+def roll(key: str, worlds: list[World], candidates: list[dict], shown: set[str], register: str,
+         candidates_lead: bool | None = None) -> dict:
+    """What leads this round, and which catalog worlds challenge it. With `candidates_lead`, a candidate leads
+    whatever the catalog holds: the round asked for candidates, and the catalog changed after."""
     unshown = [{"id": w.id, "family": w.front["family"]} for w in worlds if w.id not in shown]
-    if catalog_leads(worlds, shown, register):
+    if not candidates_lead and catalog_leads(worlds, shown, register):
         ranked = rank(unshown, key, "lead")
         return {"lead": {"kind": "world", "id": ranked[0]["id"]},
                 "challengers": _deal(ranked[1:], ranked[0]["family"], LIMIT_IN_CATALOG)}
@@ -282,17 +284,20 @@ def advance(folder: Path, brief: dict, inputs: dict) -> tuple[str, Path | None]:
     if not (work / "candidates.json").is_file():
         slug, catalog = _catalog(inputs)
         asked = not catalog_leads(catalog, set(st["shown"]), st["register"])
+        st["asked"] = asked             # the roll keeps to it, even if the catalog changes before the answer
+        _save_state(folder, st)
         return (f"Round {st['round']}: frame the video{', with seven candidates' if asked else ''}.",
                 _request(folder, brief, st, slug, asked))
     if not (work / "roll.json").is_file():
         slug, catalog = _catalog(inputs)
         doc = _read(work / "candidates.json", "candidates")
-        problems = check_candidates(doc, not catalog_leads(catalog, set(st["shown"]), st["register"]))
+        asked = st.get("asked", not catalog_leads(catalog, set(st["shown"]), st["register"]))
+        problems = check_candidates(doc, asked)
         if problems:
             raise DirectionError(f"{work / 'candidates.json'} needs fixing:\n" + "\n".join(f"  {p}" for p in problems))
         key = seed_key(brief, projects.digest(slug), st["round"], st["register"])
         try:
-            dealt = roll(key, catalog, doc["candidates"], set(st["shown"]), st["register"])
+            dealt = roll(key, catalog, doc["candidates"], set(st["shown"]), st["register"], candidates_lead=asked)
         except ValueError:
             raise DirectionError("nothing is left to lead: re-roll bolder for fresh candidates, or pin a direction "
                                  "in the creator's words") from None

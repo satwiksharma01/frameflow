@@ -11,7 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from project import produce, projects, verify_cuts
+from project import media as produce_media
+from project import produce, projects, vad, verify_cuts
 from test_eyes import _Clips
 from project.media import _find_tool, level_db, loudness
 from project.validate import ValidationError, validate
@@ -933,6 +934,30 @@ class TestDirectionInProduce(unittest.TestCase):
         self._inputs(project="p")
         self.assertIn("#FF3366", produce.storyboard_request(self.video).read_text(encoding="utf-8"))
 
+    def test_repeated_file_flags_add_up(self):
+        a, b = self.root / "a.png", self.root / "b.png"
+        a.write_bytes(b""), b.write_bytes(b"")
+        with mock.patch.object(produce, "prepare", return_value=self.video / "brief_request.md") as made:
+            self._main("--prepare", "p", "--asset", str(a), "--asset", str(b))
+        self.assertEqual(made.call_args.args[4], [a, b])
+
+    def test_a_file_flag_needs_a_file(self):                                         # Review Focus 3
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self._main("--prepare", "p", "--asset")
+
+    def test_a_reroll_names_its_register(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self._main("--reroll")
+        with mock.patch.object(produce.direction, "reroll", return_value=self.video / "direction" / "request.md") as rolled:
+            self._main("--reroll", "safer")
+        self.assertEqual(rolled.call_args.args[1], "safer")
+
+    def test_a_speech_model_error_ends_as_a_message(self):
+        with mock.patch.object(produce, "prepare", side_effect=vad.VadError("ffmpeg could not read the audio of x.mp4")):
+            with self.assertRaises(SystemExit) as cm:
+                self._main("--prepare", "p")
+        self.assertIn("could not read the audio", str(cm.exception.code))
+
     def test_the_direction_stage_runs_from_the_command_line(self):
         out = self._main("--direction")
         self.assertIn("Next: read", out)
@@ -950,12 +975,47 @@ class TestDirectionInProduce(unittest.TestCase):
         self.assertIn(name, done.stdout.decode("utf-8"))
 
 
+class TestRotation(unittest.TestCase):
+    PROBED = {"streams": [{"codec_type": "video", "width": 1280, "height": 720, "r_frame_rate": "30/1",
+                           "avg_frame_rate": "30/1", "duration": "13.7", "side_data_list": [{"rotation": -90}]}],
+              "format": {"duration": "13.7"}}
+
+    def test_analyze_reads_the_display_rotation(self):
+        with mock.patch.object(produce_media, "probe", return_value=self.PROBED):
+            self.assertEqual(produce_media.analyze("x.mp4").rotation, -90)
+
+    def test_a_clip_on_its_side_is_listed_upright_and_upside_down_is_not(self):    # Review Focus 4
+        for rotation, size in ((-90, "720x1280"), (90, "720x1280"), (180, "1280x720"), (0, "1280x720")):
+            info = produce_media.FrameRateInfo(30.0, 30.0, False, 1280, 720, 13.7, True, rotation=rotation)
+            with mock.patch.object(produce, "analyze", return_value=info):
+                self.assertEqual(produce.asset_entry(Path("WA0025.mp4"))["size"], size)
+
+
 class TestEyesInProduce(_Clips):
     def setUp(self):
         super().setUp()
         self.video = self.dir / "video"
         self.red_blue = self.clip("red-blue.mp4", ["color=red:s=180x320:d=2", "color=blue:s=180x320:d=2"])
         self.red = self.clip("red.mp4", ["color=red:s=180x320:d=1"])
+
+    def test_a_recordings_speech_is_measured_once(self):
+        talk = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])
+        transcript = {"source": talk.as_posix(), "speech": [{"start": 0.1, "end": 0.8}]}
+        with mock.patch.object(produce.first_cut, "prepare", return_value=transcript), \
+             mock.patch.object(produce.eyes.vad, "installed", return_value=True), \
+             mock.patch.object(produce.eyes.vad, "speech") as heard:
+            produce.prepare(self.video, "a reel", None, [talk], [], [])
+        heard.assert_not_called()
+        study = json.loads((self.video / "eyes" / "talk" / "study.json").read_text(encoding="utf-8"))
+        self.assertEqual(study["speech"], transcript["speech"])
+
+    def test_a_recording_prepared_without_the_speech_model_still_studies(self):     # Review Focus 1
+        talk = self.clip("talk.mp4", ["color=red:s=180x320:d=1"])
+        with mock.patch.object(produce.first_cut, "prepare", return_value={"source": talk.as_posix()}), \
+             mock.patch.object(produce.eyes.vad, "installed", return_value=False):
+            produce.prepare(self.video, "a reel", None, [talk], [], [])
+        study = json.loads((self.video / "eyes" / "talk" / "study.json").read_text(encoding="utf-8"))
+        self.assertEqual((study["speech"], study["speech_measured"]), ([], False))
 
     def test_prepare_studies_clips_and_asks_for_moments(self):
         path = produce.prepare(self.video, "a reel", None, [], [self.red_blue, self.red], [])
