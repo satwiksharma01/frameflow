@@ -25,6 +25,8 @@ output/
 
 # The creator's brand kit (brand/brand.json, fonts, logo) - theirs, not Frameflow's
 brand/
+# The creator's projects (projects/<slug>/: who they are, their catalog of worlds, a brand kit) - theirs too
+projects/
 
 # Transcription engine fetched by python -m project.transcribe --install
 tools/

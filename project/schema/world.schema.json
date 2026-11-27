@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/world.schema.json",
+  "title": "FrameflowWorld",
+  "description": "A world file's front matter: an editing style treated as a working system, in a creator's project catalog. Its seven sections follow the front matter in the file itself.",
+  "type": "object",
+  "required": ["id", "name", "family", "lineage", "tags", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "description": "The file's name, without .md." },
+    "name": { "type": "string", "minLength": 1 },
+    "family": { "enum": ["print", "screen", "music", "broadcast", "interface", "ritual"] },
+    "lineage": { "type": "string", "minLength": 1, "description": "Where it comes from, in a sentence." },
+    "tags": { "type": "array", "minItems": 3, "items": { "type": "string", "minLength": 1 } },
+    "avoid": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "What it must never become." },
+    "source": { "enum": ["proposed", "reel", "video", "creator"] },
+    "references": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Links or local paths, never copied media." }
+  }
+}

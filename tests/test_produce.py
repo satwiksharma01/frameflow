@@ -3,13 +3,15 @@ import contextlib
 import dataclasses
 import io
 import json
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from project import produce, verify_cuts
+from project import produce, projects, verify_cuts
 from test_eyes import _Clips
 from project.media import _find_tool, level_db, loudness
 from project.validate import ValidationError, validate
@@ -854,6 +856,98 @@ class TestRequests(unittest.TestCase):
 
     def test_scene_seconds(self):
         self.assertEqual([produce.scene_seconds(t) for t in (20, 90, 300, 900)], [None, None, 10.0, 30.0])
+
+
+class TestDirectionInProduce(unittest.TestCase):
+    """The taste engine in produce: a video's project, the brief's mode, the storyboard's Direction, the stages."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        patcher = mock.patch.object(projects, "PROJECTS_DIR", self.root / "projects")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.video = self.root / "v"
+        self.video.mkdir()
+        self._inputs()
+        (self.video / produce.BRIEF_FILE).write_text(json.dumps(BRIEF), encoding="utf-8")
+
+    def _inputs(self, **extra):
+        (self.video / produce.INPUTS_FILE).write_text(json.dumps(
+            {"prompt": "p", "script": None, "footage": [], "assets": [], "music": [], **extra}), encoding="utf-8")
+
+    def _main(self, *args):
+        out = io.StringIO()
+        with mock.patch("sys.argv", ["produce", str(self.video), *args]), contextlib.redirect_stdout(out):
+            produce.main()
+        return out.getvalue()
+
+    def test_an_unknown_project_is_refused_at_prepare(self):
+        with self.assertRaises(projects.ProjectError):
+            produce.prepare(self.root / "new", "p", None, [], [], [], project="nobody")
+        self.assertFalse((self.root / "new").exists())          # refused before anything was made
+
+    def test_a_known_project_is_recorded(self):
+        projects.new("p", "P")
+        produce.prepare(self.root / "new", "p", None, [], [], [], project="p")
+        inputs = json.loads((self.root / "new" / produce.INPUTS_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(inputs["project"], "p")
+
+    def test_the_brief_request_asks_for_a_mode(self):
+        inputs = {"prompt": "p", "script": None, "footage": [], "assets": [], "music": []}
+        self.assertIn("creative/modes.md", produce.brief_request(Path("C:/v"), inputs))
+
+    def test_the_storyboard_request_carries_a_chosen_direction_and_nothing_without_one(self):
+        plain = produce.storyboard_request(self.video).read_text(encoding="utf-8")
+        self.assertNotIn("## Direction", plain)
+        (self.video / "direction.json").write_text(json.dumps({
+            "name": "Care label", "thesis": "The reel reads like its own label.", "own_world": "True colour.",
+            "story": "Detail, then the fit.", "first_two_seconds": "The collar.", "signature_move": "Label lines change.",
+            "source": {"kind": "pin"}, "seed": None, "pinned": True}), encoding="utf-8")
+        directed = produce.storyboard_request(self.video).read_text(encoding="utf-8")
+        self.assertIn("## Direction", directed)
+        self.assertIn("The reel reads like its own label.", directed)
+        self.assertLess(directed.index("## Direction"), directed.index("## How"))
+        self.assertEqual(directed.replace(produce.direction.storyboard_section(self.video) + "\n", ""), plain)
+
+    def test_direction_is_refused_before_the_brief_is_confirmed(self):              # Review Focus 2
+        (self.video / produce.BRIEF_FILE).write_text(json.dumps(dict(BRIEF, open_questions=["Price?"])),
+                                                     encoding="utf-8")
+        with self.assertRaises(SystemExit) as cm:
+            self._main("--direction")
+        self.assertIn("Price?", str(cm.exception.code))
+
+    def test_a_deleted_project_is_named_not_a_traceback(self):                       # Review Focus 4
+        self._inputs(project="gone")
+        with self.assertRaises(produce.ProduceError) as cm:
+            produce.storyboard_request(self.video)
+        self.assertIn("project gone is not in projects/", str(cm.exception))
+        with self.assertRaises(SystemExit) as cm:
+            self._main("--direction")
+        self.assertIn("project gone is not in projects/", str(cm.exception.code))
+
+    def test_the_project_s_brand_kit_is_used(self):
+        projects.new("p", "P")
+        (self.root / "projects" / "p" / "brand.json").write_text('{"accent": "#FF3366"}', encoding="utf-8")
+        self._inputs(project="p")
+        self.assertIn("#FF3366", produce.storyboard_request(self.video).read_text(encoding="utf-8"))
+
+    def test_the_direction_stage_runs_from_the_command_line(self):
+        out = self._main("--direction")
+        self.assertIn("Next: read", out)
+        self.assertTrue((self.video / "direction" / "request.md").is_file())
+
+    def test_a_direction_in_any_script_prints_from_a_real_process(self):
+        name = "लेबल · ₹999"           # what a hand or a world can hold, beyond Windows' code page
+        (self.video / "direction.json").write_text(json.dumps({
+            "name": name, "thesis": "t", "own_world": "o", "story": "s", "first_two_seconds": "f",
+            "signature_move": "m", "source": {"kind": "pin"}, "seed": None, "pinned": True}), encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"}
+        done = subprocess.run([sys.executable, "-m", "project.produce", str(self.video), "--direction"],
+                              cwd=Path(produce.__file__).parent.parent, capture_output=True, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr.decode("utf-8", "replace"))
+        self.assertIn(name, done.stdout.decode("utf-8"))
 
 
 class TestEyesInProduce(_Clips):

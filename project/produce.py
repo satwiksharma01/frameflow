@@ -34,8 +34,8 @@ import re
 import sys
 from pathlib import Path
 
-from project import (beats, broll, captions, eyes, first_cut, generate, hyperframes, look, openshot_build, preview,
-                     reference, reframe, research, voiceover)
+from project import (beats, broll, captions, direction, eyes, first_cut, generate, hyperframes, look, openshot_build,
+                     preview, projects, reference, reframe, research, voiceover)
 from project.cutpoints import frame_align, kept_pieces, place_in_pause, trim_edges
 from project.editors import DEFAULT, EDITORS
 from project.eyes import stamp
@@ -114,7 +114,10 @@ def asset_entry(path: Path) -> dict:
 
 
 def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
-            assets: list[Path], music: list[Path], language: str = "auto", looks: list[Path] = ()) -> Path:
+            assets: list[Path], music: list[Path], language: str = "auto", looks: list[Path] = (),
+            project: str | None = None) -> Path:
+    if project is not None:
+        projects.load(project)      # an unknown project is refused before anything is made
     for path in looks:      # before the footage, whose transcription takes minutes
         text = path.read_text(encoding="utf-8", errors="replace") if path.suffix.lower() == ".cube" else ""
         # OpenShot's Color Map reads both kinds of .cube (checked through its engine).
@@ -124,6 +127,8 @@ def prepare(folder: Path, prompt: str, script: Path | None, footage: list[Path],
     inputs = {"prompt": prompt, "script": script.read_text(encoding="utf-8") if script else None,
               "footage": [], "assets": [], "music": [],
               "looks": [{"path": path.resolve().as_posix()} for path in looks]}
+    if project is not None:
+        inputs["project"] = project
     for video in footage:
         # Each recording is transcribed exactly as for a first cut, into its own folder.
         out, given = folder / "footage" / video.stem, stamp(video)     # as it was before it was transcribed
@@ -295,6 +300,7 @@ Work out what the creator wants and write it to `{(folder / BRIEF_FILE).as_posix
 ## How
 
 - Pick the aspect from where it will be posted: 9:16 for Reels, Shorts and TikTok; 16:9 for YouTube and pitches; 1:1 for square feeds.
+- Set `mode` to what success is for the viewer: one of stop, show, persuade, teach, tell, as `creative/modes.md` describes them.
 - If something essential is missing - who it is for, the product's name, the call to action - put it in `open_questions` rather than guessing.
 - If the creator has a skill library, name the skills this video should use in `skills`, with why.
 - For a pitch, or whenever the video will state facts about the world - numbers, dates, prices, who did what - research them with your web tools and put each in `facts`: the claim as the video will use it, who says it (`source`, as the narration would name them), the page (`url`), and the words on that page that support it (`quote`), at least four, copied exactly as the page has them rather than from a summary of it. Prefer the original - the report, the company's own page - over an article about it. State nothing from memory: a fact you cannot find stays out, or goes in `open_questions` as an entry that begins `Needed fact: `. What the creator told you about their own product needs no source.
@@ -368,10 +374,26 @@ def use_concept(folder: Path, concept: str, sample: float | None = None) -> Path
     return folder / STORYBOARD_FILE
 
 
+def _project_kit(inputs: dict) -> Path | None:
+    """The brand kit of the video's project, when it has one; a project that is gone is named, not a traceback."""
+    if inputs.get("project") is None:
+        return None
+    try:
+        projects.load(inputs["project"])
+    except projects.ProjectError as e:
+        raise ProduceError(str(e)) from None
+    return projects.brand_file(inputs["project"])
+
+
 def storyboard_request(folder: Path, brief: dict | None = None) -> Path:
     """The storyboard's request, from brief.json once confirmed, or from a plan draft its caller has checked."""
     inputs = _read(folder, INPUTS_FILE)
     brief = _confirmed_brief(folder) if brief is None else brief
+    with hyperframes.kit_file(_project_kit(inputs)):
+        return _storyboard_request(folder, brief, inputs)
+
+
+def _storyboard_request(folder: Path, brief: dict, inputs: dict) -> Path:
     parts = [f"""# Storyboard
 
 Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, matching the schema below.
@@ -437,6 +459,9 @@ Write the video scene by scene to `{(folder / STORYBOARD_FILE).as_posix()}`, mat
                    "average: a scene is a whole point, one stretch of a recording that may hold several sentences, "
                    "not a single cut. Start and end it in pauses as usual; the build cuts the pauses inside it.\n"
                    if each else "")
+    contract = direction.storyboard_section(folder)     # the chosen direction; nothing without one
+    if contract:
+        parts.append(contract)
     parts.append(f"""## How
 
 - Open with a hook in the first two seconds, and end on the call to action from the brief.
@@ -845,6 +870,12 @@ def preview_path(folder: Path, brief: dict) -> Path:
 
 
 def build(folder: Path, open_it: bool = False, budget: float = 0.0) -> Path:
+    """Build the confirmed storyboard into the editor's project, in the video's project's brand kit when it has one."""
+    with hyperframes.kit_file(_project_kit(_read(folder, INPUTS_FILE))):
+        return _build(folder, open_it, budget)
+
+
+def _build(folder: Path, open_it: bool, budget: float) -> Path:
     built_from = source_digest(folder)      # before anything is read: a change during the build is a change after it
     inputs = _read(folder, INPUTS_FILE)
     brief = _read(folder, BRIEF_FILE, "brief")
@@ -1051,6 +1082,13 @@ def main() -> None:
     stage.add_argument("--build", action="store_true", help="after the storyboard is confirmed")
     stage.add_argument("--look-at", action="store_true",
                        help="after a build: a sheet of the video for the agent to judge, then its look.json checked")
+    stage.add_argument("--direction", action="store_true",
+                       help="after the brief is confirmed: the direction round, the next step each time it is run")
+    stage.add_argument("--choose", metavar="CARD", help="the creator's choice from the direction's hand")
+    stage.add_argument("--reroll", nargs="?", const="plain", choices=direction.REGISTERS,
+                       help="another direction round: plain (the default), safer or bolder")
+    stage.add_argument("--pin", metavar="WORDS", help="the creator's own direction, in their words")
+    parser.add_argument("--project", metavar="SLUG", help="with --prepare: make the video in projects/<slug>")
     parser.add_argument("--script", type=Path, help="a script the creator wrote")
     parser.add_argument("--footage", type=Path, nargs="*", default=[], help="the creator's recordings")
     parser.add_argument("--asset", type=Path, nargs="*", default=[], help="images or clips to use")
@@ -1065,6 +1103,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.sample and not args.concept:
         parser.error("--sample goes with --concept")
+    for stream in (sys.stdout, sys.stderr):     # a hand or a world can hold any script; Windows' code page cannot
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     folder = Path(args.folder)
     try:
         if args.prepare:
@@ -1072,7 +1113,7 @@ def main() -> None:
                        if p and not p.exists()]
             if missing:
                 raise ProduceError("not found: " + ", ".join(map(str, missing)))
-            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look)}")
+            print(f"\nNext: read {prepare(folder, args.prepare, args.script, args.footage, args.asset, args.music, args.language, args.look, args.project)}")
         elif args.shots:
             print(f"\nNext: read {shots(folder)}")
         elif args.brief:
@@ -1098,11 +1139,26 @@ def main() -> None:
             print("Next: show the creator the storyboard, and wait for them to confirm it before --build.")
         elif args.look_at:
             print(f"\n{look_at(folder)[0]}")
+        elif args.direction or args.choose is not None or args.reroll is not None or args.pin is not None:
+            brief, inputs = _confirmed_brief(folder), _read(folder, INPUTS_FILE)
+            if args.direction:
+                message, path = direction.advance(folder, brief, inputs)
+            elif args.choose is not None:
+                path = direction.choose(folder, args.choose)
+                message, path = (f"Direction: {json.loads(path.read_text(encoding='utf-8'))['name']}, in {path}\n"
+                                 "Next: run --storyboard."), None
+            elif args.reroll is not None:
+                message, path = f"Re-rolled, {args.reroll}.", direction.reroll(folder, args.reroll, brief, inputs)
+            else:
+                message, path = "Pinned in the creator's words.", direction.pin(folder, args.pin, brief)
+            print(f"\n{message}")
+            if path is not None:
+                print(f"Next: read {path}")
         else:
             print(f"\nBuilt: {build(folder, args.open, args.budget)}")
     except (ProduceError, MediaError, TranscriptionError, first_cut.NoSpeechError, voiceover.VoiceError,
             hyperframes.HyperFramesError, ProfileError, generate.GenerateError, reference.AgentVideoError,
-            eyes.EyesError) as e:
+            eyes.EyesError, projects.ProjectError, direction.DirectionError) as e:
         sys.exit(f"\n{e}")
 
 

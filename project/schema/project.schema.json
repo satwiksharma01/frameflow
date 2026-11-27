@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frameflow.local/schema/project.schema.json",
+  "title": "FrameflowProject",
+  "description": "A creator's project: a channel, page or series, with who they are and the rules they keep. Its catalog of worlds sits beside it in worlds/.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "about": { "type": "string", "description": "Who the creator is and what they make." },
+    "audience": { "type": "string" },
+    "goals": { "type": "string" },
+    "platforms": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "commitments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Standing rules, such as \"never a voiceover\"." }
+  }
+}
